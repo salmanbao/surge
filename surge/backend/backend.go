@@ -39,6 +39,9 @@ type Backend interface {
 
 	CheckUnique(ctx context.Context, uniqueKey string, ttl time.Duration) (bool, error)
 
+	RegisterHandler(ctx context.Context, handlerName string) error
+	GetRegisteredHandlers(ctx context.Context) ([]string, error)
+
 	Close() error
 	IsHealthy() bool
 	Heartbeat(ctx context.Context, workerID string, ttl time.Duration) error
