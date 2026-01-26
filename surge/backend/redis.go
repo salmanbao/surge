@@ -239,16 +239,12 @@ func (r *RedisBackend) PushBatch(ctx context.Context, jobs []*job.JobEnvelope) e
 				}
 			}
 
-			// Store job data in separate key
 			pipe.Set(ctx, r.jobDataKey(job.ID), data, 0)
-
-			// Add ID to ZSET
 			pipe.ZAdd(ctx, queueKey, redis.Z{
 				Score:  float64(job.Priority),
 				Member: job.ID,
 			})
 
-			// Update registries
 			if !namespaces[job.Namespace] {
 				pipe.SAdd(ctx, fmt.Sprintf("%s:namespaces", r.prefix), job.Namespace)
 				namespaces[job.Namespace] = true
@@ -337,57 +333,71 @@ func (r *RedisBackend) GetScheduledJobs(ctx context.Context, namespace, queue st
 }
 
 // Keys: [scheduled_zset_key]
-// Args: [max_score(timestamp), limit]
-// Returns: Job ID array
+// Args: [max_score(timestamp), limit, prefix]
+// Returns: Array of {id, data} pairs for jobs with valid data
 var dispatchCmd = redis.NewScript(`
-	local jobs = redis.call("ZRANGEBYSCORE", KEYS[1], "-inf", ARGV[1], "LIMIT", 0, ARGV[2])
-	if #jobs > 0 then
-		redis.call("ZREM", KEYS[1], unpack(jobs))
+	local scheduledKey = KEYS[1]
+	local maxScore = ARGV[1]
+	local limit = tonumber(ARGV[2])
+	local prefix = ARGV[3]
+	
+	local jobIDs = redis.call("ZRANGEBYSCORE", scheduledKey, "-inf", maxScore, "LIMIT", 0, limit)
+	if #jobIDs == 0 then
+		return {}
 	end
-	return jobs
+	
+	local results = {}
+	local idsToRemove = {}
+	
+	for i, id in ipairs(jobIDs) do
+		local jobKey = prefix .. ":job:" .. id
+		local data = redis.call("GET", jobKey)
+		
+		if data then
+			table.insert(results, {id, data})
+			table.insert(idsToRemove, id)
+		end
+	end
+	
+	if #idsToRemove > 0 then
+		redis.call("ZREM", scheduledKey, unpack(idsToRemove))
+	end
+	
+	return results
 `)
 
 // DispatchScheduledJobs checks for due jobs and moves them to their queues
 func (r *RedisBackend) DispatchScheduledJobs(ctx context.Context, limit int) (int, error) {
 	now := float64(time.Now().UnixNano()) / 1e9
 
-	res, err := dispatchCmd.Run(ctx, r.client, []string{r.scheduledKey()}, now, limit).Result()
+	res, err := dispatchCmd.Run(ctx, r.client, []string{r.scheduledKey()}, now, limit, r.prefix).Result()
 	if err != nil {
 		return 0, &errors.BackendOperationError{Operation: "DispatchScheduledJobs", Err: err}
 	}
 
-	jobIDs, ok := res.([]interface{})
-	if !ok || len(jobIDs) == 0 {
+	results, ok := res.([]interface{})
+	if !ok || len(results) == 0 {
 		return 0, nil
 	}
 
-	// Fetch job data for IDs
-	keys := make([]string, len(jobIDs))
-	for i, id := range jobIDs {
-		keys[i] = r.jobDataKey(id.(string))
-	}
-
-	dataList, err := r.client.MGet(ctx, keys...).Result()
-	if err != nil {
-		// If MGET fails, we might lose jobs if we don't re-schedule them?
-		// But they are already removed from Scheduled ZSET.
-		// Current logic has risk here.
-		// Ideally dispatchCmd should be creating a "pending_dispatch" list?
-		// But for now, returning error.
-		return 0, &errors.BackendOperationError{Operation: "DispatchScheduledJobs(MGET)", Err: err}
-	}
-
 	var envelopes []*job.JobEnvelope
-	for i, dataInterface := range dataList {
-		if dataInterface == nil {
-			log.Printf("Job data missing for scheduled job %v", jobIDs[i])
+	for _, result := range results {
+		pair, ok := result.([]interface{})
+		if !ok || len(pair) != 2 {
 			continue
 		}
-		data := dataInterface.(string)
+
+		dataStr, ok := pair[1].(string)
+		if !ok {
+			continue
+		}
+
 		var envelope job.JobEnvelope
-		if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+		if err := json.Unmarshal([]byte(dataStr), &envelope); err != nil {
+			log.Printf("Failed to unmarshal scheduled job data: %v", err)
 			continue
 		}
+
 		envelopes = append(envelopes, &envelope)
 	}
 
@@ -440,10 +450,7 @@ func (r *RedisBackend) Pop(ctx context.Context, queues []string, timeout time.Du
 		}
 
 		if len(activeQueues) > 0 {
-			// Calculate expiry for processing set
 			expiry := float64(time.Now().Add(timeout).UnixNano()) / 1e9
-			// Use longer expiry for safety, the worker will Ack/Nack
-			// Actually, the score is just "when it expires/stuck"
 			expiry = float64(time.Now().Add(r.recoveryTimeout).Unix())
 
 			res, err := popCmd.Run(ctx, r.client, activeQueues, expiry).Result()
@@ -455,10 +462,9 @@ func (r *RedisBackend) Pop(ctx context.Context, queues []string, timeout time.Du
 			}
 
 			if err == redis.Nil || res == nil {
-				return nil, nil // No jobs
+				return nil, nil // no jobs
 			}
 
-			// Result should be [id, processingKey]
 			results, ok := res.([]interface{})
 			if !ok || len(results) != 2 {
 				return nil, &errors.BackendOperationError{
@@ -468,15 +474,11 @@ func (r *RedisBackend) Pop(ctx context.Context, queues []string, timeout time.Du
 			}
 
 			id := results[0].(string)
-			// processingKey := results[1].(string)
 
-			// Fetch job data
 			jobDataKey := r.jobDataKey(id)
 			data, err := r.client.Get(ctx, jobDataKey).Result()
 			if err != nil {
 				if err == redis.Nil {
-					// Job ID in queue but data missing - data loss?
-					// Should probably remove from processing?
 					log.Printf("Job %s data missing after pop", id)
 					return nil, nil
 				}
@@ -828,7 +830,6 @@ func (r *RedisBackend) InspectDLQ(ctx context.Context, namespace, queue string, 
 	start := int64(offset)
 	stop := int64(offset + limit - 1)
 
-	// Gets IDs
 	jobIDs, err := r.client.LRange(ctx, dlqKey, start, stop).Result()
 	if err != nil {
 		return nil, &errors.BackendOperationError{Operation: "InspectDLQ", Err: err}
@@ -838,9 +839,6 @@ func (r *RedisBackend) InspectDLQ(ctx context.Context, namespace, queue string, 
 		return []*job.JobEnvelope{}, nil
 	}
 
-	// Fetch data for IDs
-	// Use MGET?
-	// Need to check if IDs are valid keys? No, use jobDataKey
 	keys := make([]string, len(jobIDs))
 	for i, id := range jobIDs {
 		keys[i] = r.jobDataKey(id)
@@ -886,19 +884,12 @@ var retryFromDLQCmd = redis.NewScript(`
 	for i, id in ipairs(ids) do
 		if id == targetId then
 			redis.call("LREM", dlqKey, 1, id)
-			-- Start by getting job data to check priority (optional, or just use 0)
-			-- Actually if we have the ID, we can get priority from data, but simpler to use default or update data?
-			-- Wait, previous logic read priority from JSON.
-			-- Let's fetch data.
 			local data = redis.call("GET", jobKey)
 			local priority = 0
 			if data then
 				local success, job = pcall(cjson.decode, data)
 				if success and job then
 					priority = job.priority or 0
-					-- Update state in JSON? 
-					-- Re-queue logic usually resets state.
-					-- For simplicity, we just move it. The consumer will see it.
 				end
 			end
 			
@@ -960,7 +951,6 @@ var retryAllDLQCmd = redis.NewScript(`
 	local count = 0
 
 	for i, id in ipairs(ids) do
-		-- For simplicity, we use priority 0 or could fetch from job key
 		local priority = 0
 		redis.call("ZADD", queueKey, priority, id)
 		redis.call("HDEL", indexKey, id)
@@ -1016,6 +1006,34 @@ func (r *RedisBackend) GetNamespaces(ctx context.Context) ([]string, error) {
 	}
 
 	return namespaces, nil
+}
+
+func (r *RedisBackend) RegisterHandler(ctx context.Context, handlerName string) error {
+	registryKey := fmt.Sprintf("%s:handlers", r.prefix)
+
+	err := r.client.SAdd(ctx, registryKey, handlerName).Err()
+	if err != nil {
+		return &errors.BackendOperationError{
+			Operation: "RegisterHandler",
+			Err:       err,
+		}
+	}
+
+	return nil
+}
+
+func (r *RedisBackend) GetRegisteredHandlers(ctx context.Context) ([]string, error) {
+	registryKey := fmt.Sprintf("%s:handlers", r.prefix)
+
+	handlers, err := r.client.SMembers(ctx, registryKey).Result()
+	if err != nil {
+		return nil, &errors.BackendOperationError{
+			Operation: "GetRegisteredHandlers",
+			Err:       err,
+		}
+	}
+
+	return handlers, nil
 }
 
 func (r *RedisBackend) Close() error {

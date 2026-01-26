@@ -137,17 +137,20 @@ func (c *Client) Handle(payload interface{}, handler HandlerFunc) {
 
 	topic := getTopicName(payload)
 	c.handlers[topic] = handler
+
+	ctx := context.Background()
+	if err := c.backend.RegisterHandler(ctx, topic); err != nil {
+		log.Printf("Warning: Failed to register handler %s in backend: %v", topic, err)
+	}
 }
 
-func (c *Client) GetRegisteredHandlers() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	handlers := make([]string, 0, len(c.handlers))
-	for name := range c.handlers {
-		handlers = append(handlers, name)
+func (c *Client) GetRegisteredHandlers(ctx context.Context) ([]string, error) {
+	handlers, err := c.backend.GetRegisteredHandlers(ctx)
+	if err != nil {
+		log.Printf("error getting registered handlers: %v", err)
+		return []string{}, err
 	}
-	return handlers
+	return handlers, nil
 }
 
 func (c *Client) Consume(ctx context.Context) error {

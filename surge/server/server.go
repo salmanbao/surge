@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -19,7 +20,7 @@ var dashboardFS embed.FS
 
 type BackendProvider interface {
 	Backend() backend.Backend
-	GetRegisteredHandlers() []string
+	GetRegisteredHandlers(ctx context.Context) ([]string, error)
 }
 
 type DashboardServer struct {
@@ -172,7 +173,12 @@ func (s *DashboardServer) handleGetHandlers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	handlers := s.Provider.GetRegisteredHandlers()
+	handlers, err := s.Provider.GetRegisteredHandlers(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	json.NewEncoder(w).Encode(handlers)
 }
 
