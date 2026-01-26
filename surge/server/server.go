@@ -19,10 +19,12 @@ var dashboardFS embed.FS
 
 type BackendProvider interface {
 	Backend() backend.Backend
+	GetRegisteredHandlers() []string
 }
 
 type DashboardServer struct {
 	Backend  backend.Backend
+	Provider BackendProvider
 	Port     int
 	RootPath string
 }
@@ -30,6 +32,7 @@ type DashboardServer struct {
 func NewDashboardServer(provider BackendProvider, port int) *DashboardServer {
 	return &DashboardServer{
 		Backend:  provider.Backend(),
+		Provider: provider,
 		Port:     port,
 		RootPath: "/",
 	}
@@ -67,6 +70,7 @@ func (s *DashboardServer) Handler() http.Handler {
 	mux.HandleFunc(rootPath+"api/dlq", jsonResponse(s.handleGetDLQ))
 	mux.HandleFunc(rootPath+"api/queue/scheduled", jsonResponse(s.handleGetScheduledJobs))
 	mux.HandleFunc(rootPath+"api/namespaces", jsonResponse(s.handleGetNamespaces))
+	mux.HandleFunc(rootPath+"api/handlers", jsonResponse(s.handleGetHandlers))
 	mux.HandleFunc(rootPath+"api/queue/pause", jsonResponse(s.handlePauseQueue))
 	mux.HandleFunc(rootPath+"api/queue/resume", jsonResponse(s.handleResumeQueue))
 	mux.HandleFunc(rootPath+"api/queue/drain", jsonResponse(s.handleDrainQueue))
@@ -160,6 +164,16 @@ func (s *DashboardServer) handleGetNamespaces(w http.ResponseWriter, r *http.Req
 		return
 	}
 	json.NewEncoder(w).Encode(namespaces)
+}
+
+func (s *DashboardServer) handleGetHandlers(w http.ResponseWriter, r *http.Request) {
+	if s.Provider == nil {
+		json.NewEncoder(w).Encode([]string{})
+		return
+	}
+
+	handlers := s.Provider.GetRegisteredHandlers()
+	json.NewEncoder(w).Encode(handlers)
 }
 
 func (s *DashboardServer) handleRetryFromDLQ(w http.ResponseWriter, r *http.Request) {

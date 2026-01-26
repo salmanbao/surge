@@ -71,6 +71,10 @@ func (c *Client) Backend() backend.Backend {
 	return c.backend
 }
 
+func (c *Client) GetJob(ctx context.Context, jobID string) (*job.JobEnvelope, error) {
+	return c.backend.GetJob(ctx, jobID)
+}
+
 func (c *Client) Close() error {
 	return c.backend.Close()
 }
@@ -133,6 +137,17 @@ func (c *Client) Handle(payload interface{}, handler HandlerFunc) {
 
 	topic := getTopicName(payload)
 	c.handlers[topic] = handler
+}
+
+func (c *Client) GetRegisteredHandlers() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	handlers := make([]string, 0, len(c.handlers))
+	for name := range c.handlers {
+		handlers = append(handlers, name)
+	}
+	return handlers
 }
 
 func (c *Client) Consume(ctx context.Context) error {
