@@ -1,14 +1,7 @@
 import { useState, useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
-import {
-  Box,
-  Paper,
-  Typography,
-  Button,
-  Grid,
-  Chip,
-} from "@mui/material";
+import { Box, Paper, Typography, Button, Grid, Chip } from "@mui/material";
 import {
   Refresh as RefreshIcon,
   AccessTime as AccessTimeIcon,
@@ -17,6 +10,7 @@ import {
 import { Layout } from "./components/Layout";
 import { QueueTableContent } from "./components/QueueTableContent";
 import { QueueDetails } from "./components/QueueDetails";
+import { HandlersView } from "./components/HandlersView";
 import { CombinedQueueChart } from "./components/Charts";
 import { api } from "./services/api";
 import {
@@ -314,6 +308,7 @@ function App() {
           }
         />
         <Route path="/queue/:namespace/:queue" element={<QueueDetails />} />
+        <Route path="/handlers" element={<HandlersView />} />
       </Routes>
     </>
   );
