@@ -19,7 +19,7 @@ import {
   MenuItem,
   InputLabel,
 } from "@mui/material";
-import { Queue as QueueIcon } from "@mui/icons-material";
+import { Queue as QueueIcon, Code as CodeIcon } from "@mui/icons-material";
 import surgeLogo from "/surge_logo.svg";
 
 const drawerWidth = 260;
@@ -120,6 +120,9 @@ export function Layout({
         <List sx={{ flex: 1, py: 1 }}>
           <NavItem to="/" icon={<QueueIcon />}>
             Queues
+          </NavItem>
+          <NavItem to="/handlers" icon={<CodeIcon />}>
+            Handlers
           </NavItem>
         </List>
 

@@ -69,7 +69,7 @@ func main() {
 		return nil
 	})
 
-	client.Handle(SendEmail{}, func(ctx context.Context, job *job.JobEnvelope) error {
+	client.Handle("send_email", func(ctx context.Context, job *job.JobEnvelope) error {
 		var email SendEmail
 		if err := json.Unmarshal(job.Args, &email); err != nil {
 			return err

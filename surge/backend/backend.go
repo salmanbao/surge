@@ -11,6 +11,7 @@ type Backend interface {
 	Push(ctx context.Context, job *job.JobEnvelope) error
 	PushBatch(ctx context.Context, jobs []*job.JobEnvelope) error
 	Pop(ctx context.Context, queues []string, timeout time.Duration) (*job.JobEnvelope, error)
+	GetJob(ctx context.Context, jobID string) (*job.JobEnvelope, error)
 
 	Ack(ctx context.Context, job *job.JobEnvelope) error
 	Nack(ctx context.Context, job *job.JobEnvelope, reason error) error
