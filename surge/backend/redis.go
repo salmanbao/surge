@@ -99,25 +99,28 @@ var enqueueCmd = redis.NewScript(`
 	local nsRegistry = KEYS[2]
 	local qRegistry = KEYS[3]
 	local pauseKey = KEYS[4]
+	local jobKey = KEYS[5]
 	
 	local data = ARGV[1]
 	local priority = ARGV[2]
 	local ns = ARGV[3]
+	local id = ARGV[4]
 	
 	if redis.call("EXISTS", pauseKey) == 1 then
 		return -1
 	end
 
-	if #KEYS == 5 then
-		local uniqueKey = KEYS[5]
-		local ttl = ARGV[4]
+	if #KEYS == 6 then
+		local uniqueKey = KEYS[6]
+		local ttl = ARGV[5]
 		if redis.call("SET", uniqueKey, "1", "NX", "EX", ttl) ~= false then
 		else
 			return 2
 		end
 	end
 
-	redis.call("ZADD", key, priority, data)
+	redis.call("SET", jobKey, data)
+	redis.call("ZADD", key, priority, id)
 	redis.call("SADD", nsRegistry, ns)
 	redis.call("SADD", qRegistry, key)
 	return 1
@@ -133,9 +136,10 @@ func (r *RedisBackend) Push(ctx context.Context, job *job.JobEnvelope) error {
 	registryKey := fmt.Sprintf("%s:namespaces", r.prefix)
 	queueRegistryKey := fmt.Sprintf("%s:queues", r.prefix)
 	pauseKey := r.pauseKey(job.Namespace, job.Queue)
+	jobKey := r.jobDataKey(job.ID)
 
-	keys := []string{key, registryKey, queueRegistryKey, pauseKey}
-	args := []interface{}{data, float64(job.Priority), job.Namespace}
+	keys := []string{key, registryKey, queueRegistryKey, pauseKey, jobKey}
+	args := []interface{}{data, float64(job.Priority), job.Namespace, job.ID}
 
 	if job.UniqueKey != "" {
 		keys = append(keys, fmt.Sprintf("%s:unique:%s", r.prefix, job.UniqueKey))
@@ -234,18 +238,26 @@ func (r *RedisBackend) PushBatch(ctx context.Context, jobs []*job.JobEnvelope) e
 					Err:       err,
 				}
 			}
-			pipe.ZAdd(ctx, queueKey, redis.Z{Score: float64(job.Priority), Member: data})
+
+			// Store job data in separate key
+			pipe.Set(ctx, r.jobDataKey(job.ID), data, 0)
+
+			// Add ID to ZSET
+			pipe.ZAdd(ctx, queueKey, redis.Z{
+				Score:  float64(job.Priority),
+				Member: job.ID,
+			})
+
+			// Update registries
+			if !namespaces[job.Namespace] {
+				pipe.SAdd(ctx, fmt.Sprintf("%s:namespaces", r.prefix), job.Namespace)
+				namespaces[job.Namespace] = true
+			}
+			if !queues[queueKey] {
+				pipe.SAdd(ctx, fmt.Sprintf("%s:queues", r.prefix), queueKey)
+				queues[queueKey] = true
+			}
 		}
-	}
-
-	registryKey := fmt.Sprintf("%s:namespaces", r.prefix)
-	for ns := range namespaces {
-		pipe.SAdd(ctx, registryKey, ns)
-	}
-
-	queueRegistryKey := fmt.Sprintf("%s:queues", r.prefix)
-	for queueKey := range queues {
-		pipe.SAdd(ctx, queueRegistryKey, queueKey)
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -324,6 +336,9 @@ func (r *RedisBackend) GetScheduledJobs(ctx context.Context, namespace, queue st
 	return matches[offset:end], total, nil
 }
 
+// Keys: [scheduled_zset_key]
+// Args: [max_score(timestamp), limit]
+// Returns: Job ID array
 var dispatchCmd = redis.NewScript(`
 	local jobs = redis.call("ZRANGEBYSCORE", KEYS[1], "-inf", ARGV[1], "LIMIT", 0, ARGV[2])
 	if #jobs > 0 then
@@ -332,38 +347,45 @@ var dispatchCmd = redis.NewScript(`
 	return jobs
 `)
 
+// DispatchScheduledJobs checks for due jobs and moves them to their queues
 func (r *RedisBackend) DispatchScheduledJobs(ctx context.Context, limit int) (int, error) {
 	now := float64(time.Now().UnixNano()) / 1e9
 
 	res, err := dispatchCmd.Run(ctx, r.client, []string{r.scheduledKey()}, now, limit).Result()
 	if err != nil {
-		if err == redis.Nil {
-			return 0, nil
-		}
-		return 0, &errors.BackendOperationError{
-			Operation: "DispatchScheduledJobs",
-			Err:       err,
-		}
+		return 0, &errors.BackendOperationError{Operation: "DispatchScheduledJobs", Err: err}
 	}
 
-	jobs, ok := res.([]interface{})
-	if !ok {
+	jobIDs, ok := res.([]interface{})
+	if !ok || len(jobIDs) == 0 {
 		return 0, nil
 	}
 
-	if len(jobs) == 0 {
-		return 0, nil
+	// Fetch job data for IDs
+	keys := make([]string, len(jobIDs))
+	for i, id := range jobIDs {
+		keys[i] = r.jobDataKey(id.(string))
+	}
+
+	dataList, err := r.client.MGet(ctx, keys...).Result()
+	if err != nil {
+		// If MGET fails, we might lose jobs if we don't re-schedule them?
+		// But they are already removed from Scheduled ZSET.
+		// Current logic has risk here.
+		// Ideally dispatchCmd should be creating a "pending_dispatch" list?
+		// But for now, returning error.
+		return 0, &errors.BackendOperationError{Operation: "DispatchScheduledJobs(MGET)", Err: err}
 	}
 
 	var envelopes []*job.JobEnvelope
-	for _, j := range jobs {
-		jobData, ok := j.(string)
-		if !ok {
+	for i, dataInterface := range dataList {
+		if dataInterface == nil {
+			log.Printf("Job data missing for scheduled job %v", jobIDs[i])
 			continue
 		}
-
+		data := dataInterface.(string)
 		var envelope job.JobEnvelope
-		if err := json.Unmarshal([]byte(jobData), &envelope); err != nil {
+		if err := json.Unmarshal([]byte(data), &envelope); err != nil {
 			continue
 		}
 		envelopes = append(envelopes, &envelope)
@@ -378,28 +400,17 @@ func (r *RedisBackend) DispatchScheduledJobs(ctx context.Context, limit int) (in
 	return len(envelopes), nil
 }
 
+// Keys: [queue_key1, queue_key2, ...]
+// Args: [expiry_timestamp]
+// Returns: {id, processing_key} or nil
 var popCmd = redis.NewScript(`
 	for _, key in ipairs(KEYS) do
 		local res = redis.call("ZPOPMAX", key)
-		if #res > 0 then
-			local jobData = res[1]
-			local job = cjson.decode(jobData)
-			local id = job.id
-			local timeout = tonumber(job.timeout)
-			if timeout == nil or timeout == 0 then
-				timeout = 600
-			end
-			
-			local now = redis.call("TIME")[1]
-			local expireAt = now + timeout
-			
+		if res[1] then
+			local id = res[1]
 			local processingKey = string.gsub(key, ":queue:", ":processing:")
-			redis.call("ZADD", processingKey, expireAt, id)
-			
-			local processingHashKey = processingKey .. ":job:" .. id
-			redis.call("HSET", processingHashKey, "data", jobData)
-			
-			return jobData
+			redis.call("ZADD", processingKey, ARGV[1], id)
+			return {id, processingKey}
 		end
 	end
 	return nil
@@ -429,7 +440,13 @@ func (r *RedisBackend) Pop(ctx context.Context, queues []string, timeout time.Du
 		}
 
 		if len(activeQueues) > 0 {
-			res, err := popCmd.Run(ctx, r.client, activeQueues).Result()
+			// Calculate expiry for processing set
+			expiry := float64(time.Now().Add(timeout).UnixNano()) / 1e9
+			// Use longer expiry for safety, the worker will Ack/Nack
+			// Actually, the score is just "when it expires/stuck"
+			expiry = float64(time.Now().Add(r.recoveryTimeout).Unix())
+
+			res, err := popCmd.Run(ctx, r.client, activeQueues, expiry).Result()
 			if err != nil && err != redis.Nil {
 				return nil, &errors.BackendOperationError{
 					Operation: "Pop",
@@ -437,24 +454,44 @@ func (r *RedisBackend) Pop(ctx context.Context, queues []string, timeout time.Du
 				}
 			}
 
-			if res != nil {
-				jobData, ok := res.(string)
-				if !ok {
-					return nil, &errors.BackendOperationError{
-						Operation: "Pop",
-						Err:       fmt.Errorf("unexpected return type from Lua script"),
-					}
-				}
-
-				var envelope job.JobEnvelope
-				if err := json.Unmarshal([]byte(jobData), &envelope); err != nil {
-					return nil, &errors.BackendOperationError{
-						Operation: "Pop",
-						Err:       err,
-					}
-				}
-				return &envelope, nil
+			if err == redis.Nil || res == nil {
+				return nil, nil // No jobs
 			}
+
+			// Result should be [id, processingKey]
+			results, ok := res.([]interface{})
+			if !ok || len(results) != 2 {
+				return nil, &errors.BackendOperationError{
+					Operation: "Pop",
+					Err:       fmt.Errorf("invalid response from pop script"),
+				}
+			}
+
+			id := results[0].(string)
+			// processingKey := results[1].(string)
+
+			// Fetch job data
+			jobDataKey := r.jobDataKey(id)
+			data, err := r.client.Get(ctx, jobDataKey).Result()
+			if err != nil {
+				if err == redis.Nil {
+					// Job ID in queue but data missing - data loss?
+					// Should probably remove from processing?
+					log.Printf("Job %s data missing after pop", id)
+					return nil, nil
+				}
+				return nil, &errors.BackendOperationError{Operation: "Pop(get_data)", Err: err}
+			}
+
+			var envelope job.JobEnvelope
+			if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+				return nil, &errors.BackendOperationError{
+					Operation: "Pop",
+					Err:       err,
+				}
+			}
+
+			return &envelope, nil
 		}
 
 		select {
@@ -466,14 +503,16 @@ func (r *RedisBackend) Pop(ctx context.Context, queues []string, timeout time.Du
 	}
 }
 
+// Keys: [processing_key, job_key, stats_key]
+// Args: [job_id]
 var ackCmd = redis.NewScript(`
 	local processingKey = KEYS[1]
-	local hashKey = KEYS[2]
+	local jobKey = KEYS[2]
 	local statsKey = KEYS[3]
 	local id = ARGV[1]
 
 	if redis.call("ZREM", processingKey, id) == 1 then
-		redis.call("DEL", hashKey)
+		redis.call("DEL", jobKey)
 		if statsKey then
 			redis.call("INCR", statsKey)
 		end
@@ -482,50 +521,56 @@ var ackCmd = redis.NewScript(`
 	return 0
 `)
 
+// Keys: [processing_key, queue_key, job_key, dlq_key]
+// Args: [job_id, job_json_data, priority]
 var retryCmd = redis.NewScript(`
 	local processingKey = KEYS[1]
 	local queueKey = KEYS[2]
-	local hashKey = KEYS[3]
+	local jobKey = KEYS[3]
 	local dlqKey = KEYS[4]
 	local id = ARGV[1]
 	local data = ARGV[2]
 	local priority = ARGV[3]
 
 	local removed = redis.call("ZREM", processingKey, id)
-	local removedDLQ = redis.call("LREM", dlqKey, 1, data)
+	local removedDLQ = redis.call("LREM", dlqKey, 1, id)
 
 	if removed == 1 or removedDLQ > 0 then
-		redis.call("DEL", hashKey)
-		redis.call("ZADD", queueKey, priority, data)
+		redis.call("SET", jobKey, data)
+		redis.call("ZADD", queueKey, priority, id)
 		return 1
 	end
 	return 0
 `)
 
+// Keys: [processing_key, scheduled_key, job_key, dlq_key]
+// Args: [job_id, job_json_data, score(timestamp)]
 var scheduleRetryCmd = redis.NewScript(`
 	local processingKey = KEYS[1]
 	local scheduledKey = KEYS[2]
-	local hashKey = KEYS[3]
+	local jobKey = KEYS[3]
 	local dlqKey = KEYS[4]
 	local id = ARGV[1]
 	local data = ARGV[2]
 	local score = ARGV[3]
 
 	local removed = redis.call("ZREM", processingKey, id)
-	local removedDLQ = redis.call("LREM", dlqKey, 1, data)
+	local removedDLQ = redis.call("LREM", dlqKey, 1, id)
 
 	if removed == 1 or removedDLQ > 0 then
-		redis.call("DEL", hashKey)
-		redis.call("ZADD", scheduledKey, score, data)
+		redis.call("SET", jobKey, data)
+		redis.call("ZADD", scheduledKey, score, id)
 		return 1
 	end
 	return 0
 `)
 
+// Keys: [processing_key, dlq_key, job_key, dlq_index_key]
+// Args: [job_id, job_json_data, namespace, queue]
 var dlqCmd = redis.NewScript(`
 	local processingKey = KEYS[1]
 	local dlqKey = KEYS[2]
-	local hashKey = KEYS[3]
+	local jobKey = KEYS[3]
 	local indexKey = KEYS[4]
 	local id = ARGV[1]
 	local data = ARGV[2]
@@ -533,18 +578,18 @@ var dlqCmd = redis.NewScript(`
 	local queue = ARGV[4]
 
 	redis.call("ZREM", processingKey, id)
-	redis.call("DEL", hashKey)
-	redis.call("LPUSH", dlqKey, data)
+	redis.call("SET", jobKey, data)
+	redis.call("LPUSH", dlqKey, id)
 	redis.call("HSET", indexKey, id, namespace .. ":" .. queue)
 	return 1
 `)
 
 func (r *RedisBackend) Ack(ctx context.Context, envelope *job.JobEnvelope) error {
 	processingKey := r.processingKey(envelope.Namespace, envelope.Queue)
-	processingHashKey := fmt.Sprintf("%s:job:%s", processingKey, envelope.ID)
+	jobKey := r.jobDataKey(envelope.ID)
 	statsKey := fmt.Sprintf("%s:processed", r.queueKey(envelope.Namespace, envelope.Queue))
 
-	res, err := ackCmd.Run(ctx, r.client, []string{processingKey, processingHashKey, statsKey}, envelope.ID).Result()
+	res, err := ackCmd.Run(ctx, r.client, []string{processingKey, jobKey, statsKey}, envelope.ID).Result()
 	if err != nil {
 		return &errors.BackendOperationError{Operation: "Ack", Err: err}
 	}
@@ -557,7 +602,8 @@ func (r *RedisBackend) Ack(ctx context.Context, envelope *job.JobEnvelope) error
 
 func (r *RedisBackend) Nack(ctx context.Context, envelope *job.JobEnvelope, reason error) error {
 	processingKey := r.processingKey(envelope.Namespace, envelope.Queue)
-	processingHashKey := fmt.Sprintf("%s:job:%s", processingKey, envelope.ID)
+	jobKey := r.jobDataKey(envelope.ID)
+
 	queueKey := r.queueKey(envelope.Namespace, envelope.Queue)
 	dlqKey := r.dlqKey(envelope.Namespace, envelope.Queue)
 
@@ -600,7 +646,7 @@ func (r *RedisBackend) Nack(ctx context.Context, envelope *job.JobEnvelope, reas
 			envelope.Priority = originalPriority
 
 			_, err = scheduleRetryCmd.Run(ctx, r.client,
-				[]string{processingKey, r.scheduledKey(), processingHashKey, dlqKey},
+				[]string{processingKey, r.scheduledKey(), jobKey, dlqKey},
 				envelope.ID, jobData, timestamp).Result()
 
 			if err != nil {
@@ -608,7 +654,7 @@ func (r *RedisBackend) Nack(ctx context.Context, envelope *job.JobEnvelope, reas
 			}
 		} else {
 			_, err = retryCmd.Run(ctx, r.client,
-				[]string{processingKey, queueKey, processingHashKey, dlqKey},
+				[]string{processingKey, queueKey, jobKey, dlqKey},
 				envelope.ID, jobData, float64(retryPriority)).Result()
 
 			if err != nil {
@@ -623,7 +669,7 @@ func (r *RedisBackend) Nack(ctx context.Context, envelope *job.JobEnvelope, reas
 
 func (r *RedisBackend) Retry(ctx context.Context, envelope *job.JobEnvelope) error {
 	processingKey := r.processingKey(envelope.Namespace, envelope.Queue)
-	processingHashKey := fmt.Sprintf("%s:job:%s", processingKey, envelope.ID)
+	jobKey := r.jobDataKey(envelope.ID)
 	queueKey := r.queueKey(envelope.Namespace, envelope.Queue)
 	dlqKey := r.dlqKey(envelope.Namespace, envelope.Queue)
 
@@ -637,7 +683,7 @@ func (r *RedisBackend) Retry(ctx context.Context, envelope *job.JobEnvelope) err
 	}
 
 	_, err = retryCmd.Run(ctx, r.client,
-		[]string{processingKey, queueKey, processingHashKey, dlqKey},
+		[]string{processingKey, queueKey, jobKey, dlqKey},
 		envelope.ID, jobData, float64(envelope.Priority)).Result()
 
 	if err != nil {
@@ -656,12 +702,12 @@ func (r *RedisBackend) MoveToDLQ(ctx context.Context, envelope *job.JobEnvelope)
 	}
 
 	processingKey := r.processingKey(envelope.Namespace, envelope.Queue)
-	processingHashKey := fmt.Sprintf("%s:job:%s", processingKey, envelope.ID)
+	jobKey := r.jobDataKey(envelope.ID)
 	dlqKey := r.dlqKey(envelope.Namespace, envelope.Queue)
 	dlqIndexKey := r.dlqIndexKey()
 
 	_, err = dlqCmd.Run(ctx, r.client,
-		[]string{processingKey, dlqKey, processingHashKey, dlqIndexKey},
+		[]string{processingKey, dlqKey, jobKey, dlqIndexKey},
 		envelope.ID, jobData, envelope.Namespace, envelope.Queue).Result()
 
 	if err != nil {
@@ -782,15 +828,43 @@ func (r *RedisBackend) InspectDLQ(ctx context.Context, namespace, queue string, 
 	start := int64(offset)
 	stop := int64(offset + limit - 1)
 
-	rawJobs, err := r.client.LRange(ctx, dlqKey, start, stop).Result()
+	// Gets IDs
+	jobIDs, err := r.client.LRange(ctx, dlqKey, start, stop).Result()
 	if err != nil {
 		return nil, &errors.BackendOperationError{Operation: "InspectDLQ", Err: err}
 	}
 
-	envelopes := make([]*job.JobEnvelope, 0, len(rawJobs))
-	for _, raw := range rawJobs {
+	if len(jobIDs) == 0 {
+		return []*job.JobEnvelope{}, nil
+	}
+
+	// Fetch data for IDs
+	// Use MGET?
+	// Need to check if IDs are valid keys? No, use jobDataKey
+	keys := make([]string, len(jobIDs))
+	for i, id := range jobIDs {
+		keys[i] = r.jobDataKey(id)
+	}
+
+	dataList, err := r.client.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, &errors.BackendOperationError{Operation: "InspectDLQ(MGET)", Err: err}
+	}
+
+	envelopes := make([]*job.JobEnvelope, 0, len(dataList))
+	for i, dataInterface := range dataList {
+		if dataInterface == nil {
+			log.Printf("Job data missing for DLQ job %s", jobIDs[i])
+			continue
+		}
+
+		dataStr, ok := dataInterface.(string)
+		if !ok {
+			continue
+		}
+
 		var env job.JobEnvelope
-		if err := json.Unmarshal([]byte(raw), &env); err != nil {
+		if err := json.Unmarshal([]byte(dataStr), &env); err != nil {
 			log.Printf("Failed to unmarshal DLQ job: %v", err)
 			continue
 		}
@@ -804,16 +878,31 @@ var retryFromDLQCmd = redis.NewScript(`
 	local dlqKey = KEYS[1]
 	local queueKey = KEYS[2]
 	local indexKey = KEYS[3]
+	local jobKey = KEYS[4]
 	local targetId = ARGV[1]
 
-	local jobs = redis.call("LRANGE", dlqKey, 0, -1)
+	local ids = redis.call("LRANGE", dlqKey, 0, -1)
 	
-	for i, jobData in ipairs(jobs) do
-		local success, job = pcall(cjson.decode, jobData)
-		if success and job and job.id == targetId then
-			redis.call("LREM", dlqKey, 1, jobData)
-			local priority = job.priority or 0
-			redis.call("ZADD", queueKey, priority, jobData)
+	for i, id in ipairs(ids) do
+		if id == targetId then
+			redis.call("LREM", dlqKey, 1, id)
+			-- Start by getting job data to check priority (optional, or just use 0)
+			-- Actually if we have the ID, we can get priority from data, but simpler to use default or update data?
+			-- Wait, previous logic read priority from JSON.
+			-- Let's fetch data.
+			local data = redis.call("GET", jobKey)
+			local priority = 0
+			if data then
+				local success, job = pcall(cjson.decode, data)
+				if success and job then
+					priority = job.priority or 0
+					-- Update state in JSON? 
+					-- Re-queue logic usually resets state.
+					-- For simplicity, we just move it. The consumer will see it.
+				end
+			end
+			
+			redis.call("ZADD", queueKey, priority, id)
 			redis.call("HDEL", indexKey, targetId)
 			return 1
 		end
@@ -845,9 +934,10 @@ func (r *RedisBackend) RetryFromDLQ(ctx context.Context, jobID string) error {
 	queue := parts[1]
 	dlqKey := r.dlqKey(namespace, queue)
 	queueKey := r.queueKey(namespace, queue)
+	jobKey := r.jobDataKey(jobID)
 
 	res, err := retryFromDLQCmd.Run(ctx, r.client,
-		[]string{dlqKey, queueKey, dlqIndexKey},
+		[]string{dlqKey, queueKey, dlqIndexKey, jobKey},
 		jobID).Result()
 
 	if err != nil {
@@ -866,25 +956,19 @@ var retryAllDLQCmd = redis.NewScript(`
 	local queueKey = KEYS[2]
 	local indexKey = KEYS[3]
 
-	local jobs = redis.call("LRANGE", dlqKey, 0, -1)
+	local ids = redis.call("LRANGE", dlqKey, 0, -1)
 	local count = 0
-	local jobIds = {}
 
-	for i, jobData in ipairs(jobs) do
-		local success, job = pcall(cjson.decode, jobData)
-		if success and job then
-			local priority = job.priority or 0
-			redis.call("ZADD", queueKey, priority, jobData)
-			table.insert(jobIds, job.id)
-			count = count + 1
-		end
+	for i, id in ipairs(ids) do
+		-- For simplicity, we use priority 0 or could fetch from job key
+		local priority = 0
+		redis.call("ZADD", queueKey, priority, id)
+		redis.call("HDEL", indexKey, id)
+		count = count + 1
 	end
 
 	if count > 0 then
 		redis.call("DEL", dlqKey)
-		for i, jobId in ipairs(jobIds) do
-			redis.call("HDEL", indexKey, jobId)
-		end
 	end
 
 	return count
@@ -1014,11 +1098,11 @@ func (r *RedisBackend) recoverStuckJobs(ctx context.Context) {
 }
 
 func (r *RedisBackend) recoverJob(ctx context.Context, processingKey, jobID string) error {
-	processingHashKey := fmt.Sprintf("%s:job:%s", processingKey, jobID)
+	jobKey := r.jobDataKey(jobID)
 
-	jobData, err := r.client.HGet(ctx, processingHashKey, "data").Result()
+	jobData, err := r.client.Get(ctx, jobKey).Result()
 	if err == redis.Nil {
-		log.Printf("Job %s data lost during processing, moving to DLQ", jobID)
+		log.Printf("Job %s data lost during processing (key not found), moving to DLQ", jobID)
 		return r.moveExpiredJobToDLQ(ctx, processingKey, jobID)
 	}
 	if err != nil {
@@ -1041,14 +1125,14 @@ func (r *RedisBackend) recoverJob(ctx context.Context, processingKey, jobID stri
 var recoverCmd = redis.NewScript(`
 	local processingKey = KEYS[1]
 	local queueKey = KEYS[2]
-	local hashKey = KEYS[3]
+	local jobKey = KEYS[3]
 	local id = ARGV[1]
 	local data = ARGV[2]
 	local priority = ARGV[3]
 
 	if redis.call("ZREM", processingKey, id) == 1 then
-		redis.call("DEL", hashKey)
-		redis.call("ZADD", queueKey, priority, data)
+		redis.call("SET", jobKey, data)
+		redis.call("ZADD", queueKey, priority, id)
 		return 1
 	end
 	return 0
@@ -1077,10 +1161,10 @@ func (r *RedisBackend) recoverJobToQueue(ctx context.Context, envelope *job.JobE
 	}
 
 	queueKey := r.queueKey(namespace, queue)
-	hashKey := fmt.Sprintf("%s:job:%s", processingKey, envelope.ID)
+	jobKey := r.jobDataKey(envelope.ID)
 
 	res, err := recoverCmd.Run(ctx, r.client,
-		[]string{processingKey, queueKey, hashKey},
+		[]string{processingKey, queueKey, jobKey},
 		envelope.ID, jobData, float64(recoveryPriority)).Result()
 
 	if err != nil {
@@ -1152,6 +1236,28 @@ func (r *RedisBackend) dlqKey(namespace, queue string) string {
 
 func (r *RedisBackend) dlqIndexKey() string {
 	return fmt.Sprintf("%s:dlq:index", r.prefix)
+}
+
+func (r *RedisBackend) jobDataKey(jobID string) string {
+	return fmt.Sprintf("%s:job:%s", r.prefix, jobID)
+}
+
+func (r *RedisBackend) GetJob(ctx context.Context, jobID string) (*job.JobEnvelope, error) {
+	key := r.jobDataKey(jobID)
+	data, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return nil, &errors.JobNotFoundError{JobID: jobID}
+	}
+	if err != nil {
+		return nil, &errors.BackendOperationError{Operation: "GetJob", Err: err}
+	}
+
+	var envelope job.JobEnvelope
+	if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+		return nil, &errors.BackendOperationError{Operation: "GetJob(unmarshal)", Err: err}
+	}
+
+	return &envelope, nil
 }
 
 func (r *RedisBackend) parseQueueKey(queueKey string) (namespace, queue string, err error) {

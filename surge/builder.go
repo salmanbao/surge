@@ -57,6 +57,10 @@ func (c *Client) Job(payload interface{}) *JobBuilder {
 }
 
 func getTopicName(payload interface{}) string {
+	if str, ok := payload.(string); ok {
+		return str
+	}
+
 	if namer, ok := payload.(JobNamer); ok {
 		return namer.JobName()
 	}
