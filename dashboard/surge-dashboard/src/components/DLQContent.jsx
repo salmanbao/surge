@@ -7,7 +7,6 @@ import {
   InputAdornment,
   ToggleButtonGroup,
   ToggleButton,
-  Alert,
   Button,
   CircularProgress,
   FormControl,
@@ -186,23 +185,40 @@ function BulkActionBar({ selectedCount, onBulkRetry, loading, show }) {
   if (!show) return null;
 
   return (
-    <Alert
-      severity="info"
-      sx={{ mb: 2 }}
-      action={
-        <Button
-          onClick={onBulkRetry}
-          disabled={loading}
-          variant="contained"
-          size="small"
-          startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <RetryIcon />}
-        >
-          {loading ? "Retrying..." : "Retry Selected"}
-        </Button>
-      }
+    <Box
+      sx={{
+        mb: 2,
+        p: 2,
+        bgcolor: "primary.light",
+        borderRadius: 1,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        border: "1px solid",
+        borderColor: "primary.main",
+      }}
     >
-      {selectedCount} job{selectedCount !== 1 ? "s" : ""} selected
-    </Alert>
+      <Typography variant="body1" sx={{ fontWeight: 500, color: "primary.contrastText" }}>
+        {selectedCount} job{selectedCount !== 1 ? "s" : ""} selected
+      </Typography>
+      <Button
+        onClick={onBulkRetry}
+        disabled={loading}
+        variant="contained"
+        color="primary"
+        size="medium"
+        startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <RetryIcon />}
+        sx={{
+          bgcolor: "primary.dark",
+          "&:hover": {
+            bgcolor: "primary.dark",
+            opacity: 0.9,
+          },
+        }}
+      >
+        {loading ? "Retrying..." : `Retry ${selectedCount} Selected`}
+      </Button>
+    </Box>
   );
 }
 
