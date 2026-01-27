@@ -136,15 +136,20 @@ export function QueueDetailsProvider({ children }) {
     [namespace, queue, scheduledPage, scheduledPageSize],
   );
 
-  // Data Fetch Effects
   useEffect(() => {
-    if (!dlqInitialLoad) {
-      if (activeTab === 0) fetchDLQ(dlqPage, dlqPageSize);
-    } else {
-      setDlqInitialLoad(false);
-      fetchDLQ(1, dlqPageSize);
+    if (activeTab === 0) {
+      if (dlqInitialLoad) {
+        setDlqInitialLoad(false);
+        fetchDLQ(1, dlqPageSize);
+      } else {
+        fetchDLQ(dlqPage, dlqPageSize);
+      }
     }
   }, [dlqPage, dlqPageSize, fetchDLQ, activeTab, dlqInitialLoad]);
+
+  useEffect(() => {
+    fetchScheduled(1, scheduledPageSize);
+  }, [namespace, queue, fetchScheduled, scheduledPageSize]);
 
   useEffect(() => {
     if (activeTab === 1) {
