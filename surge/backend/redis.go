@@ -90,10 +90,6 @@ func NewRedisBackend(ctx context.Context, cfg RedisConfig) (*RedisBackend, error
 	return backend, nil
 }
 
-func (r *RedisBackend) scheduledKey() string {
-	return fmt.Sprintf("%s:scheduled", r.prefix)
-}
-
 var enqueueCmd = redis.NewScript(`
 	local key = KEYS[1]
 	local nsRegistry = KEYS[2]
@@ -267,8 +263,25 @@ func (r *RedisBackend) PushBatch(ctx context.Context, jobs []*job.JobEnvelope) e
 	return nil
 }
 
+func (r *RedisBackend) scheduledKey() string {
+	return fmt.Sprintf("%s:scheduled", r.prefix)
+}
+
 var scheduleCmd = redis.NewScript(`
-	redis.call("ZADD", KEYS[1], ARGV[1], ARGV[2])
+	local scheduledKey = KEYS[1]
+	local jobKey = KEYS[2]
+	local nsRegistry = KEYS[3]
+	local qRegistry = KEYS[4]
+	local timestamp = ARGV[1]
+	local jobID = ARGV[2]
+	local jobData = ARGV[3]
+	local ns = ARGV[4]
+	local queueKey = ARGV[5]
+	
+	redis.call("SET", jobKey, jobData)
+	redis.call("ZADD", scheduledKey, timestamp, jobID)
+	redis.call("SADD", nsRegistry, ns)
+	redis.call("SADD", qRegistry, queueKey)
 	return 0
 `)
 
@@ -282,8 +295,12 @@ func (r *RedisBackend) Schedule(ctx context.Context, job *job.JobEnvelope, proce
 	}
 
 	timestamp := float64(processAt.UnixNano()) / 1e9
+	jobKey := r.jobDataKey(job.ID)
+	registryKey := fmt.Sprintf("%s:namespaces", r.prefix)
+	queueRegistryKey := fmt.Sprintf("%s:queues", r.prefix)
+	queueKey := r.queueKey(job.Namespace, job.Queue)
 
-	_, err = scheduleCmd.Run(ctx, r.client, []string{r.scheduledKey()}, timestamp, data).Result()
+	_, err = scheduleCmd.Run(ctx, r.client, []string{r.scheduledKey(), jobKey, registryKey, queueRegistryKey}, timestamp, job.ID, data, job.Namespace, queueKey).Result()
 	if err != nil {
 		return &errors.BackendOperationError{
 			Operation: "Schedule",
@@ -302,12 +319,22 @@ func (r *RedisBackend) GetScheduledJobs(ctx context.Context, namespace, queue st
 
 	var matches []*job.JobEnvelope
 	for _, z := range results {
-		var envelope job.JobEnvelope
-		strData, ok := z.Member.(string)
+		jobID, ok := z.Member.(string)
 		if !ok {
 			continue
 		}
-		if err := json.Unmarshal([]byte(strData), &envelope); err != nil {
+
+		jobKey := r.jobDataKey(jobID)
+		data, err := r.client.Get(ctx, jobKey).Result()
+		if err != nil {
+			if err == redis.Nil {
+				continue
+			}
+			return nil, 0, &errors.BackendOperationError{Operation: "GetScheduledJobs", Err: err}
+		}
+
+		var envelope job.JobEnvelope
+		if err := json.Unmarshal([]byte(data), &envelope); err != nil {
 			continue
 		}
 
