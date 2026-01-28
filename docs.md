@@ -113,6 +113,8 @@ client.JobWithTopic("email.sent", SendEmail{
 }).Enqueue(ctx)
 ```
 
+**Important:** If you register a handler using a **string topic** (like `"email.sent"`), you **must** use `JobWithTopic()` when enqueuing jobs. This ensures the topic matches your handler registration and allows you to send structured payloads instead of just strings.
+
 ---
 
 ## Namespaces: Multi-Tenancy Made Simple
