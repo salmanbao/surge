@@ -25,6 +25,7 @@ type JobBuilder struct {
 	client     *Client
 	batch      *Batch
 	payload    interface{}
+	topic      string
 	namespace  string
 	queue      string
 	maxRetries int
@@ -48,6 +49,21 @@ func (c *Client) Job(payload interface{}) *JobBuilder {
 		client:     c,
 		batch:      nil,
 		payload:    payload,
+		topic:      topic,
+		namespace:  c.config.DefaultNamespace,
+		queue:      topic,
+		maxRetries: c.config.MaxRetries,
+		priority:   job.PriorityNormal,
+		timeout:    c.config.DefaultJobTimeout,
+	}
+}
+
+func (c *Client) JobWithTopic(topic string, payload interface{}) *JobBuilder {
+	return &JobBuilder{
+		client:     c,
+		batch:      nil,
+		payload:    payload,
+		topic:      topic,
 		namespace:  c.config.DefaultNamespace,
 		queue:      topic,
 		maxRetries: c.config.MaxRetries,
@@ -110,6 +126,7 @@ func (b *Batch) Job(payload interface{}) *JobBuilder {
 		client:     b.client,
 		batch:      b,
 		payload:    payload,
+		topic:      topic,
 		namespace:  b.client.config.DefaultNamespace,
 		queue:      topic,
 		maxRetries: b.client.config.MaxRetries,
@@ -145,9 +162,14 @@ func (jb *JobBuilder) buildEnvelope(ctx context.Context) (*job.JobEnvelope, erro
 	}
 
 	uniqueKey := ""
+	topic := jb.topic
+	if topic == "" {
+		topic = getTopicName(jb.payload)
+	}
+
 	if jb.uniqueFor != nil {
 		hash := sha256.Sum256(args)
-		uniqueKey = fmt.Sprintf("%s:%s:%x", jb.namespace, getTopicName(jb.payload), hash)
+		uniqueKey = fmt.Sprintf("%s:%s:%x", jb.namespace, topic, hash)
 		isUnique, err := jb.client.backend.CheckUnique(ctx, uniqueKey, *jb.uniqueFor)
 		if err != nil {
 			return nil, err
@@ -161,7 +183,7 @@ func (jb *JobBuilder) buildEnvelope(ctx context.Context) (*job.JobEnvelope, erro
 
 	envelope := &job.JobEnvelope{
 		ID:         uuid.New().String(),
-		Topic:      getTopicName(jb.payload),
+		Topic:      topic,
 		Args:       args,
 		Namespace:  jb.namespace,
 		Queue:      jb.queue,

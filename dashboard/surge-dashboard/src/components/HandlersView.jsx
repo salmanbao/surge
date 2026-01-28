@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -25,7 +25,7 @@ export function HandlersView() {
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
 
-  const fetchHandlers = async () => {
+  const fetchHandlers = useCallback(async () => {
     try {
       const data = await api.getHandlers();
       setHandlers(Array.isArray(data) ? data : []);
@@ -35,13 +35,14 @@ export function HandlersView() {
       handleApiError(err, "Failed to fetch handlers");
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchHandlers();
     const interval = setInterval(fetchHandlers, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchHandlers]);
 
   if (loading) {
     return (

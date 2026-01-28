@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -25,7 +25,7 @@ export function ConsumersView() {
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
 
-  const fetchWorkers = async () => {
+  const fetchWorkers = useCallback(async () => {
     try {
       const data = await api.getWorkers();
       setWorkers(Array.isArray(data) ? data : []);
@@ -35,13 +35,14 @@ export function ConsumersView() {
       handleApiError(err, "Failed to fetch workers");
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchWorkers();
     const interval = setInterval(fetchWorkers, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchWorkers]);
 
   if (loading) {
     return (
@@ -71,7 +72,8 @@ export function ConsumersView() {
                 Consumers
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {workers.length} consumer{workers.length !== 1 ? "s" : ""} active
+                {workers.length} consumer{workers.length !== 1 ? "s" : ""}{" "}
+                active
               </Typography>
               <Typography
                 variant="body2"
