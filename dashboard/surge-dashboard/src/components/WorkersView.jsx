@@ -11,7 +11,7 @@ import {
   Tooltip,
 } from "@mui/material";
 import {
-  Code as CodeIcon,
+  People as PeopleIcon,
   Refresh as RefreshIcon,
   CheckCircle as CheckCircleIcon,
 } from "@mui/icons-material";
@@ -20,26 +20,26 @@ import { api } from "../services/api";
 import { handleApiError } from "../utils/errorHelpers";
 import { SkeletonLoader } from "./SkeletonLoader";
 
-export function HandlersView() {
-  const [handlers, setHandlers] = useState([]);
+export function WorkersView() {
+  const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
 
-  const fetchHandlers = async () => {
+  const fetchWorkers = async () => {
     try {
-      const data = await api.getHandlers();
-      setHandlers(Array.isArray(data) ? data : []);
+      const data = await api.getWorkers();
+      setWorkers(Array.isArray(data) ? data : []);
       setLoading(false);
       setLastUpdate(new Date());
     } catch (err) {
-      handleApiError(err, "Failed to fetch handlers");
+      handleApiError(err, "Failed to fetch workers");
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchHandlers();
-    const interval = setInterval(fetchHandlers, 30000);
+    fetchWorkers();
+    const interval = setInterval(fetchWorkers, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -65,14 +65,13 @@ export function HandlersView() {
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <CodeIcon sx={{ fontSize: 32, color: "primary.main" }} />
+            <PeopleIcon sx={{ fontSize: 32, color: "primary.main" }} />
             <Box>
               <Typography variant="h4" component="h1">
-                Registered Handlers
+                Active Workers
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {handlers.length} handler{handlers.length !== 1 ? "s" : ""}{" "}
-                registered
+                {workers.length} worker{workers.length !== 1 ? "s" : ""} active
               </Typography>
             </Box>
           </Box>
@@ -83,21 +82,21 @@ export function HandlersView() {
               </Typography>
             )}
             <Tooltip title="Refresh">
-              <IconButton onClick={fetchHandlers} size="small">
+              <IconButton onClick={fetchWorkers} size="small">
                 <RefreshIcon />
               </IconButton>
             </Tooltip>
           </Box>
         </Box>
 
-        {handlers.length === 0 ? (
+        {workers.length === 0 ? (
           <Alert severity="info" sx={{ maxWidth: 600 }}>
-            No handlers registered yet. Register handlers using{" "}
-            <code>client.Handle()</code> in your application.
+            No active workers found. Workers will appear here when they start
+            processing jobs.
           </Alert>
         ) : (
           <Grid container spacing={2}>
-            {handlers.map((handler, index) => (
+            {workers.map((worker, index) => (
               <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
                 <Card
                   elevation={2}
@@ -119,7 +118,7 @@ export function HandlersView() {
                         mb: 2,
                       }}
                     >
-                      <CodeIcon sx={{ color: "primary.main", fontSize: 28 }} />
+                      <PeopleIcon sx={{ color: "primary.main", fontSize: 28 }} />
                       <Chip
                         icon={<CheckCircleIcon />}
                         label="Active"
@@ -137,10 +136,10 @@ export function HandlersView() {
                         mb: 1,
                       }}
                     >
-                      {handler}
+                      {worker}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Job Handler
+                      Worker ID
                     </Typography>
                   </CardContent>
                 </Card>
