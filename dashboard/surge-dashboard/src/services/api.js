@@ -5,7 +5,7 @@ const getApiBase = () => {
       const url = new URL(baseTag.href);
       return url.pathname.replace(/\/$/, "") + "/api";
     } catch {
-      const match = baseTag.href.match(/https?:\/\/[^\/]+(\/.*)/);
+      const match = baseTag.href.match(/https?:\/\/[^/]+(\/.*)/);
       if (match) {
         return match[1].replace(/\/$/, "") + "/api";
       }
@@ -46,7 +46,7 @@ async function parseJSONResponse(res) {
   // (some backends send JSON with text/plain or other content types)
   try {
     return JSON.parse(text);
-  } catch (e) {
+  } catch {
     throw new Error(
       `Failed to parse JSON response. Content-Type: ${contentType || "unknown"}. Response: ${text.substring(0, 100)}`,
     );

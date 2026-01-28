@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { Box, Paper, Typography, Button, Grid, Chip } from "@mui/material";
@@ -38,7 +38,13 @@ function HomePage({
   const [queuePage, setQueuePage] = useState(1);
   const [queuePageSize, setQueuePageSize] = useState(25);
 
-  const fetchQueues = async () => {
+  const [prevNs, setPrevNs] = useState(selectedNs);
+  if (prevNs !== selectedNs) {
+    setPrevNs(selectedNs);
+    setQueuePage(1);
+  }
+
+  const fetchQueues = useCallback(async () => {
     try {
       const data = await api.getQueues();
       setQueues(Array.isArray(data) ? data : []);
@@ -48,9 +54,9 @@ function HomePage({
       handleApiError(err, "Failed to fetch queues");
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchNamespaces = async () => {
+  const fetchNamespaces = useCallback(async () => {
     try {
       const data = await api.getNamespaces();
       const safeData = Array.isArray(data) ? data : [];
@@ -69,35 +75,37 @@ function HomePage({
     } catch (err) {
       handleApiError(err, "Failed to fetch namespaces");
     }
-  };
+  }, [initialLoad, onNamespaceChange, onNamespacesChange, selectedNs]);
 
-  const fetchValues = () => {
+  const fetchValues = useCallback(() => {
     fetchQueues();
     fetchNamespaces();
-  };
+  }, [fetchQueues, fetchNamespaces]);
 
-  const fetchBatchStats = async () => {
+  const fetchBatchStats = useCallback(async () => {
     try {
       const data = await api.getBatchQueueStats(selectedNs);
       setQueueStats(buildStatsMap(data));
     } catch (err) {
       handleApiError(err, "Batch stats error");
     }
-  };
+  }, [selectedNs]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchValues();
     const interval = setInterval(fetchValues, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchValues]);
 
   useEffect(() => {
     if (namespaces.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchBatchStats();
       const interval = setInterval(fetchBatchStats, 3000);
       return () => clearInterval(interval);
     }
-  }, [selectedNs, namespaces]);
+  }, [selectedNs, namespaces, fetchBatchStats]);
 
   const filteredQueues = queues.filter((q) => q.namespace === selectedNs);
 
@@ -120,10 +128,6 @@ function HomePage({
     setQueuePageSize(newSize);
     setQueuePage(1);
   };
-
-  useEffect(() => {
-    setQueuePage(1);
-  }, [selectedNs]);
 
   const handleStatsUpdate = (namespace, queueName, stats) => {
     setQueueStats((prev) => ({
@@ -288,10 +292,10 @@ function App() {
   const [namespaces, setNamespaces] = useState([]);
   const [selectedNs, setSelectedNs] = useState(getStoredNamespace);
 
-  const handleNamespaceChange = (newNs) => {
+  const handleNamespaceChange = useCallback((newNs) => {
     setSelectedNs(newNs);
     saveNamespace(newNs);
-  };
+  }, []);
 
   return (
     <>
