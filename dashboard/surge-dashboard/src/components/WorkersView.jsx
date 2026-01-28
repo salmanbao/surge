@@ -20,7 +20,7 @@ import { api } from "../services/api";
 import { handleApiError } from "../utils/errorHelpers";
 import { SkeletonLoader } from "./SkeletonLoader";
 
-export function WorkersView() {
+export function ConsumersView() {
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
@@ -68,10 +68,21 @@ export function WorkersView() {
             <PeopleIcon sx={{ fontSize: 32, color: "primary.main" }} />
             <Box>
               <Typography variant="h4" component="h1">
-                Active Workers
+                Consumers
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {workers.length} worker{workers.length !== 1 ? "s" : ""} active
+                {workers.length} consumer{workers.length !== 1 ? "s" : ""} active
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 0.5 }}
+              >
+                Consumers are long-lived processes that call{" "}
+                <code>Consume()</code> to pull jobs from your queues. To scale
+                horizontally, run more consumers across your services or
+                instances—this view shows how many are currently connected and
+                participating in work.
               </Typography>
             </Box>
           </Box>
@@ -91,8 +102,8 @@ export function WorkersView() {
 
         {workers.length === 0 ? (
           <Alert severity="info" sx={{ maxWidth: 600 }}>
-            No active workers found. Workers will appear here when they start
-            processing jobs.
+            No active consumers found. Consumers will appear here when they
+            start processing jobs.
           </Alert>
         ) : (
           <Grid container spacing={2}>
@@ -118,7 +129,9 @@ export function WorkersView() {
                         mb: 2,
                       }}
                     >
-                      <PeopleIcon sx={{ color: "primary.main", fontSize: 28 }} />
+                      <PeopleIcon
+                        sx={{ color: "primary.main", fontSize: 28 }}
+                      />
                       <Chip
                         icon={<CheckCircleIcon />}
                         label="Active"
@@ -139,7 +152,7 @@ export function WorkersView() {
                       {worker}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Worker ID
+                      Consumer ID
                     </Typography>
                   </CardContent>
                 </Card>
