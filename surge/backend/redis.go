@@ -1063,6 +1063,37 @@ func (r *RedisBackend) GetRegisteredHandlers(ctx context.Context) ([]string, err
 	return handlers, nil
 }
 
+func (r *RedisBackend) GetActiveWorkers(ctx context.Context) ([]string, error) {
+	pattern := fmt.Sprintf("%s:worker:*", r.prefix)
+	var workers []string
+	var cursor uint64
+
+	for {
+		keys, nextCursor, err := r.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return nil, &errors.BackendOperationError{
+				Operation: "GetActiveWorkers",
+				Err:       err,
+			}
+		}
+
+		for _, key := range keys {
+			parts := strings.Split(key, ":")
+			if len(parts) >= 3 {
+				workerID := strings.Join(parts[2:], ":")
+				workers = append(workers, workerID)
+			}
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return workers, nil
+}
+
 func (r *RedisBackend) Close() error {
 	if r.cancelRecovery != nil {
 		r.cancelRecovery()

@@ -19,7 +19,11 @@ import {
   MenuItem,
   InputLabel,
 } from "@mui/material";
-import { Queue as QueueIcon, Code as CodeIcon } from "@mui/icons-material";
+import {
+  Queue as QueueIcon,
+  Code as CodeIcon,
+  People as PeopleIcon,
+} from "@mui/icons-material";
 import surgeLogo from "/surge_logo.svg";
 
 const drawerWidth = 260;
@@ -123,6 +127,9 @@ export function Layout({
           </NavItem>
           <NavItem to="/handlers" icon={<CodeIcon />}>
             Handlers
+          </NavItem>
+          <NavItem to="/workers" icon={<PeopleIcon />}>
+            Workers
           </NavItem>
         </List>
 

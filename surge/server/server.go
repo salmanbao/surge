@@ -72,6 +72,7 @@ func (s *DashboardServer) Handler() http.Handler {
 	mux.HandleFunc(rootPath+"api/queue/scheduled", jsonResponse(s.handleGetScheduledJobs))
 	mux.HandleFunc(rootPath+"api/namespaces", jsonResponse(s.handleGetNamespaces))
 	mux.HandleFunc(rootPath+"api/handlers", jsonResponse(s.handleGetHandlers))
+	mux.HandleFunc(rootPath+"api/workers", jsonResponse(s.handleGetWorkers))
 	mux.HandleFunc(rootPath+"api/queue/pause", jsonResponse(s.handlePauseQueue))
 	mux.HandleFunc(rootPath+"api/queue/resume", jsonResponse(s.handleResumeQueue))
 	mux.HandleFunc(rootPath+"api/queue/drain", jsonResponse(s.handleDrainQueue))
@@ -180,6 +181,16 @@ func (s *DashboardServer) handleGetHandlers(w http.ResponseWriter, r *http.Reque
 	}
 
 	json.NewEncoder(w).Encode(handlers)
+}
+
+func (s *DashboardServer) handleGetWorkers(w http.ResponseWriter, r *http.Request) {
+	workers, err := s.Backend.GetActiveWorkers(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(workers)
 }
 
 func (s *DashboardServer) handleRetryFromDLQ(w http.ResponseWriter, r *http.Request) {
