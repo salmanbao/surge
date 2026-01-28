@@ -128,8 +128,8 @@ export function Layout({
           <NavItem to="/handlers" icon={<CodeIcon />}>
             Handlers
           </NavItem>
-          <NavItem to="/workers" icon={<PeopleIcon />}>
-            Workers
+          <NavItem to="/consumers" icon={<PeopleIcon />}>
+            Consumers
           </NavItem>
         </List>
 
