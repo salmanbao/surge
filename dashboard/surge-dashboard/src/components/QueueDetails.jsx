@@ -34,6 +34,7 @@ import {
   Schedule as ScheduleIcon,
   Sync as SyncIcon,
 } from "@mui/icons-material";
+import { useState, useEffect } from "react";
 import { Layout } from "./Layout";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { ScheduledJobsTable } from "./tables/ScheduledJobsTable";
@@ -46,16 +47,57 @@ import {
 import { getModalConfig, handleModalConfirm } from "../utils/modalConfig";
 import { calculateErrorRate, getErrorRateSeverity } from "../utils/errorRateHelpers";
 import { getPauseResumeButtonProps } from "../utils/buttonHelpers";
+import { api } from "../services/api";
+import {
+  getStoredNamespace,
+  saveNamespace,
+  sortNamespaces,
+} from "../utils/namespaceHelpers";
 
 export function QueueDetails() {
+  const navigate = useNavigate();
+  const [namespaces, setNamespaces] = useState([]);
+  const [selectedNs, setSelectedNs] = useState(getStoredNamespace());
+
+  useEffect(() => {
+    const fetchNamespaces = async () => {
+      try {
+        const data = await api.getNamespaces();
+        const safeData = Array.isArray(data) ? data : [];
+        const sorted = sortNamespaces(safeData);
+        setNamespaces(sorted);
+        if (sorted.length > 0 && !sorted.includes(selectedNs)) {
+          const newNs = sorted[0];
+          setSelectedNs(newNs);
+          saveNamespace(newNs);
+        }
+      } catch (err) {
+        console.error("Failed to fetch namespaces:", err);
+      }
+    };
+    fetchNamespaces();
+    const interval = setInterval(fetchNamespaces, 30000);
+    return () => clearInterval(interval);
+  }, [selectedNs]);
+
+  const handleNamespaceChange = (newNs) => {
+    setSelectedNs(newNs);
+    saveNamespace(newNs);
+    navigate("/");
+  };
+
   return (
     <QueueDetailsProvider>
-      <QueueDetailsContent />
+      <QueueDetailsContent
+        namespaces={namespaces}
+        selectedNs={selectedNs}
+        onNamespaceChange={handleNamespaceChange}
+      />
     </QueueDetailsProvider>
   );
 }
 
-function QueueDetailsContent() {
+function QueueDetailsContent({ namespaces, selectedNs, onNamespaceChange }) {
   const navigate = useNavigate();
   const {
     namespace,
@@ -147,7 +189,11 @@ function QueueDetailsContent() {
 
   if (loading) {
     return (
-      <Layout>
+      <Layout
+        namespaces={namespaces}
+        selectedNs={selectedNs}
+        onNamespaceChange={onNamespaceChange}
+      >
         <Box sx={{ maxWidth: "1400px", mx: "auto", p: 3 }}>
           <SkeletonLoader />
         </Box>
@@ -157,7 +203,11 @@ function QueueDetailsContent() {
 
   if (!stats) {
     return (
-      <Layout>
+      <Layout
+        namespaces={namespaces}
+        selectedNs={selectedNs}
+        onNamespaceChange={onNamespaceChange}
+      >
         <Box sx={{ maxWidth: "1400px", mx: "auto", p: 3 }}>
           <Alert severity="error" icon={<ErrorIcon />}>
             <Typography variant="h6" sx={{ mb: 1 }}>
@@ -178,7 +228,11 @@ function QueueDetailsContent() {
   const isPaused = stats.paused === true;
 
   return (
-    <Layout>
+    <Layout
+      namespaces={namespaces}
+      selectedNs={selectedNs}
+      onNamespaceChange={onNamespaceChange}
+    >
       <Box sx={{ maxWidth: "1400px", mx: "auto", p: 3 }}>
         {/* Header */}
         <Box sx={{ mb: 4 }}>

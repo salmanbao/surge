@@ -151,6 +151,15 @@ export const api = {
     return parseJSONResponse(res);
   },
 
+  getWorkers: async () => {
+    const res = await fetch(`${API_BASE}/workers`);
+    if (!res.ok)
+      throw new Error(
+        `Failed to fetch workers: ${res.status} ${res.statusText}`,
+      );
+    return parseJSONResponse(res);
+  },
+
   retryJob: async (jobId) => {
     const res = await fetch(`${API_BASE}/dlq/retry?job_id=${jobId}`, {
       method: "POST",

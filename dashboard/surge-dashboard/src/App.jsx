@@ -11,6 +11,7 @@ import { Layout } from "./components/Layout";
 import { QueueTableContent } from "./components/QueueTableContent";
 import { QueueDetails } from "./components/QueueDetails";
 import { HandlersView } from "./components/HandlersView";
+import { WorkersView } from "./components/WorkersView";
 import { CombinedQueueChart } from "./components/Charts";
 import { api } from "./services/api";
 import {
@@ -309,6 +310,7 @@ function App() {
         />
         <Route path="/queue/:namespace/:queue" element={<QueueDetails />} />
         <Route path="/handlers" element={<HandlersView />} />
+        <Route path="/workers" element={<WorkersView />} />
       </Routes>
     </>
   );
