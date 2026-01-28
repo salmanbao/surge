@@ -93,7 +93,52 @@ err := client.Job(SendEmail{
     To:      "user@example.com",
     Subject: "Welcome",
     Body:    "Thanks for signing up!",
+}).Ns("shop_123").Enqueue(ctx)
+```
+
+This enqueues the job into the `shop_123` namespace, so all queue keys and metrics for this job are isolated to that tenant while still sharing the same Surge cluster.
+
+### String Topics With Structured Payloads
+
+```go
+client.Handle("email.sent", func(ctx context.Context, j *job.JobEnvelope) error {
+    var email SendEmail
+    return json.Unmarshal(j.Args, &email)
+})
+
+client.JobWithTopic("email.sent", SendEmail{
+    To:      "user@example.com",
+    Subject: "Welcome",
+    Body:    "Thanks for signing up!",
 }).Enqueue(ctx)
+```
+
+---
+
+## Namespaces: Multi-Tenancy Made Simple
+
+**Namespaces are Surge's core feature for multi-tenancy.** Every job belongs to a namespace, which isolates queue keys, metrics, and processing while sharing the same Redis instance and worker pool.
+
+**Use cases:**
+- **Per-tenant isolation**: `shop_123`, `org_456`, `user_789`
+- **Environment separation**: `staging`, `production`, `dev`
+- **Domain boundaries**: `billing`, `analytics`, `notifications`
+
+**How it works:**
+- Queue keys are prefixed: `surge:{namespace}:queue:{queue_name}`
+- Each namespace has its own DLQ, processing sets, and stats
+- Workers consume from all namespaces automatically (no configuration needed)
+- Perfect for SaaS platforms where each customer needs isolated job processing
+
+**Example:**
+```go
+// Tenant A's jobs
+client.Job(SendEmail{}).Ns("shop_123").Enqueue(ctx)
+
+// Tenant B's jobs  
+client.Job(SendEmail{}).Ns("shop_456").Enqueue(ctx)
+
+// Both use the same Surge client and Redis, but queues are completely isolated
 ```
 
 ---
@@ -165,6 +210,42 @@ cfg := &config.Config{
 
 ## Job Builder API
 
+### Topics vs Queues: Understanding the Difference
+
+Surge uses two related but distinct concepts for routing and storing jobs:
+
+**Topic** (Logical Routing)
+- The **semantic identifier** that determines which handler processes a job
+- Used for **routing** jobs to the correct handler function
+- Examples: `"email.sent"`, `"order.processed"`, `"SendEmail"` (type name)
+- Set via: `Handle("email.sent", handler)` or `JobWithTopic("email.sent", payload)`
+- Think of it as: "What kind of work is this?"
+
+**Queue** (Physical Storage)
+- The **physical Redis data structure** (sorted set/list) where jobs are stored
+- Used for **storage and ordering** of jobs in Redis
+- Defaults to the topic name, but can be overridden
+- Format: `surge:{namespace}:queue:{queue_name}`
+- Think of it as: "Where is this job stored in Redis?"
+
+**Default Behavior:**
+```go
+// Topic = "SendEmail", Queue = "SendEmail" (defaults to topic)
+client.Job(SendEmail{}).Enqueue(ctx)
+
+// Topic = "email.sent", Queue = "email.sent" (defaults to topic)
+client.JobWithTopic("email.sent", SendEmail{}).Enqueue(ctx)
+```
+
+**Key Insight:**
+- Currently, queue always defaults to the topic name (one-to-one mapping)
+- One topic maps to one handler
+- The queue is an implementation detail; the topic is your application's contract
+
+**When to Use Each:**
+- Use **topics** when you want to route jobs to specific handlers (most common)
+- The queue name is automatically derived from the topic, so you typically don't need to think about it
+
 ### Basic Enqueue
 
 ```go
@@ -189,6 +270,8 @@ client.Job(CriticalTask{}).
 - `PriorityNormal` (0) - default
 - `PriorityLow` (-50)
 
+Higher-priority jobs are pulled from the queue before lower-priority ones, allowing you to fast-track critical work under load.
+
 ### Scheduled Jobs
 
 ```go
@@ -200,6 +283,8 @@ client.Job(MonthlyReport{}).
     ScheduleAt(time.Date(2024, 2, 1, 9, 0, 0, 0, time.UTC)).
     Enqueue(ctx)
 ```
+
+Schedules jobs to run in the future instead of immediately, either after a relative delay (`Schedule`) or at an absolute time (`ScheduleAt`).
 
 ### Job Uniqueness
 
@@ -219,6 +304,8 @@ client.Job(AnalyticsEvent{}).
     Enqueue(ctx)
 ```
 
+Routes the job into a specific namespace, allowing you to isolate tenants, environments, or domains while still using a shared Surge cluster.
+
 ### Max Retries
 
 ```go
@@ -226,6 +313,8 @@ client.Job(FlakeyAPI{}).
     MaxRetries(10).
     Enqueue(ctx)
 ```
+
+Overrides the default maximum retry count for this job. After the specified number of failed attempts, the job is moved to the DLQ instead of being retried again.
 
 ### Chaining
 
@@ -236,6 +325,8 @@ client.Job(ProcessOrder{ID: "123"}).
     UniqueFor(5 * time.Minute).
     Enqueue(ctx)
 ```
+
+Builder methods can be chained to compose behavior in a single, readable expression (priority, retries, uniqueness, and more).
 
 ---
 

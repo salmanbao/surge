@@ -283,6 +283,7 @@ export function QueueDetailsProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useQueueDetails = () => {
   const context = useContext(QueueDetailsContext);
   if (!context) {
