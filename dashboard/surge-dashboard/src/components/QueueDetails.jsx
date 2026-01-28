@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import toast from "react-hot-toast";
+
 import {
   Box,
   Paper,
@@ -34,7 +34,7 @@ import {
   Schedule as ScheduleIcon,
   Sync as SyncIcon,
 } from "@mui/icons-material";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Layout } from "./Layout";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { ScheduledJobsTable } from "./tables/ScheduledJobsTable";
@@ -45,7 +45,10 @@ import {
   useQueueDetails,
 } from "../context/QueueDetailsContext";
 import { getModalConfig, handleModalConfirm } from "../utils/modalConfig";
-import { calculateErrorRate, getErrorRateSeverity } from "../utils/errorRateHelpers";
+import {
+  calculateErrorRate,
+  getErrorRateSeverity,
+} from "../utils/errorRateHelpers";
 import { getPauseResumeButtonProps } from "../utils/buttonHelpers";
 import { api } from "../services/api";
 import {
@@ -80,11 +83,14 @@ export function QueueDetails() {
     return () => clearInterval(interval);
   }, [selectedNs]);
 
-  const handleNamespaceChange = (newNs) => {
-    setSelectedNs(newNs);
-    saveNamespace(newNs);
-    navigate("/");
-  };
+  const handleNamespaceChange = useCallback(
+    (newNs) => {
+      setSelectedNs(newNs);
+      saveNamespace(newNs);
+      navigate("/");
+    },
+    [navigate],
+  );
 
   return (
     <QueueDetailsProvider>
@@ -106,7 +112,6 @@ function QueueDetailsContent({ namespaces, selectedNs, onNamespaceChange }) {
     loading,
     lastUpdate,
     activeTab,
-    setActiveTab,
     handleTabChange,
     confirmModal,
     setConfirmModal,
@@ -125,7 +130,6 @@ function QueueDetailsContent({ namespaces, selectedNs, onNamespaceChange }) {
     viewMode,
     setViewMode,
     selectedJobs,
-    setSelectedJobs,
     toggleJobSelection,
     selectAll,
 
@@ -165,8 +169,6 @@ function QueueDetailsContent({ namespaces, selectedNs, onNamespaceChange }) {
       jobId.includes(query) || error.includes(query) || topic.includes(query)
     );
   });
-
-  const totalPages = Math.ceil(dlqTotal / dlqPageSize);
 
   const handlePageChange = (event, page) => {
     setDlqPage(page);
@@ -667,8 +669,11 @@ function QueueDetailsContent({ namespaces, selectedNs, onNamespaceChange }) {
 }
 
 function PauseResumeButton({ isPaused, actionLoading, onClick }) {
-  const { text, color, icon } = getPauseResumeButtonProps(isPaused, actionLoading);
-  
+  const { text, color, icon } = getPauseResumeButtonProps(
+    isPaused,
+    actionLoading,
+  );
+
   return (
     <Button
       onClick={onClick}
