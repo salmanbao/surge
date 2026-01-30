@@ -40,6 +40,7 @@ type Config struct {
 	NackTimeout       time.Duration
 	DefaultJobTimeout time.Duration
 	RedisPingTimeout  time.Duration
+	RedisPrefix       string
 }
 
 func (c *Config) SetDefaults() {
@@ -113,6 +114,9 @@ func (c *Config) SetDefaults() {
 	if c.RedisPingTimeout == 0 {
 		c.RedisPingTimeout = 5 * time.Second
 	}
+	if c.RedisPrefix == "" {
+		c.RedisPrefix = "surge"
+	}
 }
 
 func (c *Config) Validate() error {
@@ -184,6 +188,7 @@ func (c *Config) CreateBackend(ctx context.Context) (backend.Backend, error) {
 			RecoveryInterval: c.RedisRecoveryInterval,
 			RecoveryTimeout:  c.RedisRecoveryTimeout,
 			PingTimeout:      c.RedisPingTimeout,
+			Prefix:           c.RedisPrefix,
 		}
 		return backend.NewRedisBackend(ctx, redisCfg)
 	case driver.DriverCustom:

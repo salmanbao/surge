@@ -127,7 +127,7 @@ client.JobWithTopic("email.sent", SendEmail{
 - **Domain boundaries**: `billing`, `analytics`, `notifications`
 
 **How it works:**
-- Queue keys are prefixed: `surge:{namespace}:queue:{queue_name}`
+- Queue keys use the configurable Redis prefix (default `surge`): `{prefix}:{namespace}:queue:{queue_name}`. Set `RedisPrefix` in config to run multiple Surge instances on the same Redis without key collisions.
 - Each namespace has its own DLQ, processing sets, and stats
 - Workers consume from all namespaces automatically (no configuration needed)
 - Perfect for SaaS platforms where each customer needs isolated job processing
@@ -196,6 +196,7 @@ cfg := &config.Config{
 | `RedisMaxRetries`       | `3`         | Redis connection retry attempts |
 | `RedisConnMaxIdleTime`  | `5m`        | Redis connection idle timeout |
 | `RedisPingTimeout`      | `5s`        | Redis ping timeout            |
+| `RedisPrefix`            | `surge`      | Prefix for all Redis keys (e.g. `surge:namespaces`, `surge:{ns}:queue:{queue}`). Use a custom prefix to share Redis across multiple Surge instances. |
 | `MaxWorkers`            | `25`        | Concurrent worker limit       |
 | `MaxRetries`            | `25`        | Max retry attempts per job    |
 | `DefaultNamespace`      | `default`   | Default queue namespace       |
@@ -227,7 +228,7 @@ Surge uses two related but distinct concepts for routing and storing jobs:
 - The **physical Redis data structure** (sorted set/list) where jobs are stored
 - Used for **storage and ordering** of jobs in Redis
 - Defaults to the topic name, but can be overridden
-- Format: `surge:{namespace}:queue:{queue_name}`
+- Format: `{prefix}:{namespace}:queue:{queue_name}` (prefix defaults to `surge`, configurable via `RedisPrefix`)
 - Think of it as: "Where is this job stored in Redis?"
 
 **Default Behavior:**
