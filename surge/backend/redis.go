@@ -28,6 +28,7 @@ type RedisConfig struct {
 	RecoveryInterval time.Duration
 	RecoveryTimeout  time.Duration
 	PingTimeout      time.Duration
+	Prefix           string
 }
 
 type RedisBackend struct {
@@ -70,9 +71,14 @@ func NewRedisBackend(ctx context.Context, cfg RedisConfig) (*RedisBackend, error
 
 	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
 
+	prefix := cfg.Prefix
+	if prefix == "" {
+		prefix = "surge"
+	}
+
 	backend := &RedisBackend{
 		client:           client,
-		prefix:           "surge",
+		prefix:           prefix,
 		recoveryInterval: cfg.RecoveryInterval,
 		recoveryTimeout:  cfg.RecoveryTimeout,
 		cancelRecovery:   cancelRecovery,
