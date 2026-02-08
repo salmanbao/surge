@@ -2,11 +2,11 @@ package main
 
 // Job structs from examples
 type ProcessWebhook struct {
-	WebhookID  string                 `json:"webhook_id"`
-	Endpoint   string                 `json:"endpoint"`
-	Payload    map[string]interface{} `json:"payload"`
-	Headers    map[string]string      `json:"headers"`
-	RetryCount int                    `json:"retry_count"`
+	WebhookID  string            `json:"webhook_id"`
+	Endpoint   string            `json:"endpoint"`
+	Payload    map[string]any    `json:"payload"`
+	Headers    map[string]string `json:"headers"`
+	RetryCount int               `json:"retry_count"`
 }
 
 type ProcessOrder struct {

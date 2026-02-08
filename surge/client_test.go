@@ -278,7 +278,7 @@ func TestClient_Handle_RegistersHandlerInBackend(t *testing.T) {
 
 	testCases := []struct {
 		name         string
-		payload      interface{}
+		payload      any
 		expectedName string
 	}{
 		{
@@ -377,5 +377,61 @@ func TestClient_JobWithTopic_StringTopicAndStructuredPayload(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for JobWithTopic handler")
+	}
+}
+
+func TestClient_JobWithMetadata(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+
+	testCtx := SetupTestWrapper(t)
+	ctx := context.Background()
+
+	c, err := surge.NewClient(ctx, testCtx.cfg)
+	require.NoError(t, err)
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = c.Shutdown(shutdownCtx)
+		_ = c.Close()
+	}()
+
+	type MetadataJob struct {
+		Data string
+	}
+
+	done := make(chan struct{})
+
+	c.Handle(MetadataJob{}, func(ctx context.Context, j *job.JobEnvelope) error {
+		defer close(done)
+
+		val, ok := j.Metadata["user_id"].(string)
+		require.True(t, ok, "metadata user_id should be present and a string")
+		require.Equal(t, "12345", val, "metadata user_id should match")
+
+		role, ok := j.Metadata["role"].(string)
+		require.True(t, ok, "metadata role should be present and a string")
+		require.Equal(t, "admin", role, "metadata role should match")
+
+		return nil
+	})
+
+	md := map[string]any{
+		"user_id": "12345",
+		"role":    "admin",
+	}
+
+	err = c.Job(MetadataJob{Data: "test"}).
+		Metadata(md).
+		Enqueue(ctx)
+	require.NoError(t, err)
+
+	go c.Consume(ctx)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for MetadataJob handler")
 	}
 }
