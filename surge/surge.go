@@ -131,7 +131,7 @@ func (c *Client) Drain(ctx context.Context, namespace, queue string) (int64, err
 	return c.backend.Drain(ctx, namespace, queue)
 }
 
-func (c *Client) Handle(payload interface{}, handler HandlerFunc) {
+func (c *Client) Handle(payload any, handler HandlerFunc) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -195,13 +195,13 @@ func (c *Client) consume(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	job, err := c.backend.Pop(ctx, keys, c.config.PopTimeout)
+	jobEnv, err := c.backend.Pop(ctx, keys, c.config.PopTimeout)
 	if err != nil {
 		log.Printf("error popping job from queue: %v", err)
 		return false, nil
 	}
 
-	if job == nil {
+	if jobEnv == nil {
 		return false, nil
 	}
 
@@ -217,15 +217,17 @@ func (c *Client) consume(ctx context.Context) (bool, error) {
 				c.workerWG.Done()
 
 				if r := recover(); r != nil {
-					log.Printf("panic in worker processing job %s: %v", job.ID, r)
-					if nackErr := c.backend.Nack(context.Background(), job,
+					log.Printf("panic in worker processing job %s: %v", jobEnv.ID, r)
+					if nackErr := c.backend.Nack(context.Background(), jobEnv,
 						fmt.Errorf("panic: %v", r)); nackErr != nil {
 						log.Printf("failed to NACK job after panic: %v", nackErr)
 					}
 				}
+
+				job.PutJobEnvelope(jobEnv)
 			}()
 
-			if err := c.processJob(ctx, job); err != nil {
+			if err := c.processJob(ctx, jobEnv); err != nil {
 				log.Printf("error processing job: %v", err)
 			}
 		}()

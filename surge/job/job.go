@@ -43,11 +43,33 @@ type JobEnvelope struct {
 	Priority    Priority        `json:"priority"`
 	UniqueKey   string          `json:"unique_key,omitempty"`
 	Timeout     int             `json:"timeout"`
+	Metadata    map[string]any  `json:"metadata,omitempty"`
 }
 
 type Job struct {
 	ID     string
 	Name   string
-	Data   map[string]interface{}
+	Data   map[string]any
 	Status string
+}
+
+func (j *JobEnvelope) Reset() {
+	j.ID = ""
+	j.Topic = ""
+	j.Args = nil
+	j.Namespace = ""
+	j.Queue = ""
+	j.State = ""
+	j.CreatedAt = time.Time{}
+	j.ScheduledAt = nil
+	j.StartedAt = nil
+	j.CompletedAt = nil
+	j.RetryCount = 0
+	j.MaxRetries = 0
+	j.NextRetryAt = nil
+	j.LastError = ""
+	j.Priority = 0
+	j.UniqueKey = ""
+	j.Timeout = 0
+	j.Metadata = nil
 }
