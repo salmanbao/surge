@@ -52,8 +52,7 @@ func main() {
 		if err := json.Unmarshal(job.Args, &webhook); err != nil {
 			return err
 		}
-		// time.Sleep(50 * time.Millisecond)
-		time.Sleep(5 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 		log.Printf("Processed webhook %s: %v", webhook.WebhookID, webhook.Payload)
 		return nil
 	})
@@ -63,8 +62,7 @@ func main() {
 		if err := json.Unmarshal(job.Args, &order); err != nil {
 			return err
 		}
-		// time.Sleep(50 * time.Millisecond)
-		time.Sleep(5 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 		log.Printf("Processed order %s: $%.2f", order.OrderID, order.Amount)
 		return nil
 	})
@@ -74,8 +72,7 @@ func main() {
 		if err := json.Unmarshal(job.Args, &email); err != nil {
 			return err
 		}
-		// time.Sleep(50 * time.Millisecond)
-		time.Sleep(5 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 		log.Printf("Sent email to %s: %s", email.To, email.Subject)
 		return nil
 	})
@@ -85,8 +82,7 @@ func main() {
 		if err := json.Unmarshal(job.Args, &payment); err != nil {
 			return err
 		}
-		// time.Sleep(50 * time.Millisecond)
-		time.Sleep(5 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 		log.Printf("Processed payment %s: %s %.2f", payment.PaymentID, payment.Currency, payment.Amount)
 		return nil
 	})
@@ -96,8 +92,7 @@ func main() {
 		if err := json.Unmarshal(job.Args, &refund); err != nil {
 			return err
 		}
-		// time.Sleep(50 * time.Millisecond)
-		time.Sleep(5 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 		log.Printf("Processed refund %s: $%.2f (reason: %s)", refund.RefundID, refund.Amount, refund.Reason)
 		return nil
 	})
@@ -107,8 +102,7 @@ func main() {
 		if err := json.Unmarshal(job.Args, &notification); err != nil {
 			return err
 		}
-		// time.Sleep(10 * time.Millisecond)
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Millisecond)
 		log.Printf("Sent notification to user %s: %s", notification.UserID, notification.Message)
 		return nil
 	})
@@ -158,7 +152,7 @@ func main() {
 		webhook := &ProcessWebhook{
 			WebhookID: fmt.Sprintf("wh-%d", i+1),
 			Endpoint:  fmt.Sprintf("https://api.example.com/webhooks/%d", i+1),
-			Payload: map[string]interface{}{
+			Payload: map[string]any{
 				"event":     "user.created",
 				"user_id":   fmt.Sprintf("user-%d", i+1),
 				"timestamp": time.Now().Unix(),

@@ -17,7 +17,6 @@ Surge is a distributed, Redis-backed job queue built specifically for Platform a
 - **Recovery System**: Automatic detection and recovery of stuck jobs
 - **Web Dashboard**: Real-time monitoring and management UI
 
-
 ---
 
 ## Installation
@@ -122,22 +121,25 @@ client.JobWithTopic("email.sent", SendEmail{
 **Namespaces are Surge's core feature for multi-tenancy.** Every job belongs to a namespace, which isolates queue keys, metrics, and processing while sharing the same Redis instance and worker pool.
 
 **Use cases:**
+
 - **Per-tenant isolation**: `shop_123`, `org_456`, `user_789`
 - **Environment separation**: `staging`, `production`, `dev`
 - **Domain boundaries**: `billing`, `analytics`, `notifications`
 
 **How it works:**
+
 - Queue keys use the configurable Redis prefix (default `surge`): `{prefix}:{namespace}:queue:{queue_name}`. Set `RedisPrefix` in config to run multiple Surge instances on the same Redis without key collisions.
 - Each namespace has its own DLQ, processing sets, and stats
 - Workers consume from all namespaces automatically (no configuration needed)
 - Perfect for SaaS platforms where each customer needs isolated job processing
 
 **Example:**
+
 ```go
 // Tenant A's jobs
 client.Job(SendEmail{}).Ns("shop_123").Enqueue(ctx)
 
-// Tenant B's jobs  
+// Tenant B's jobs
 client.Job(SendEmail{}).Ns("shop_456").Enqueue(ctx)
 
 // Both use the same Surge client and Redis, but queues are completely isolated
@@ -186,38 +188,51 @@ cfg := &config.Config{
 
 ### Configuration Reference
 
-| Parameter               | Default     | Description                   |
-| ----------------------- | ----------- | ----------------------------- |
-| `RedisHost`             | `localhost` | Redis server hostname         |
-| `RedisPort`             | `6379`      | Redis server port             |
-| `RedisDB`               | `0`         | Redis database number         |
-| `RedisPassword`         | `""`        | Redis authentication password |
-| `RedisPoolSize`         | `10`        | Connection pool size          |
-| `RedisMaxRetries`       | `3`         | Redis connection retry attempts |
-| `RedisConnMaxIdleTime`  | `5m`        | Redis connection idle timeout |
-| `RedisPingTimeout`      | `5s`        | Redis ping timeout            |
-| `RedisPrefix`            | `surge`      | Prefix for all Redis keys (e.g. `surge:namespaces`, `surge:{ns}:queue:{queue}`). Use a custom prefix to share Redis across multiple Surge instances. |
-| `MaxWorkers`            | `25`        | Concurrent worker limit       |
-| `MaxRetries`            | `25`        | Max retry attempts per job    |
-| `DefaultNamespace`      | `default`   | Default queue namespace       |
-| `ShutdownTimeout`       | `30s`       | Graceful shutdown timeout     |
-| `DefaultJobTimeout`     | `5m`        | Default job execution timeout |
-| `RedisRecoveryInterval` | `30s`       | Stuck job check frequency     |
-| `RedisRecoveryTimeout`  | `10m`       | Job considered stuck after    |
-| `HeartbeatInterval`     | `5s`        | Worker heartbeat frequency    |
-| `HeartbeatTTL`          | `30s`       | Worker heartbeat TTL         |
-| `PopTimeout`            | `5s`        | Queue pop timeout             |
-| `NackTimeout`           | `5s`        | Nack operation timeout        |
+| Parameter               | Default     | Description                                                                                                                                          |
+| ----------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RedisHost`             | `localhost` | Redis server hostname                                                                                                                                |
+| `RedisPort`             | `6379`      | Redis server port                                                                                                                                    |
+| `RedisDB`               | `0`         | Redis database number                                                                                                                                |
+| `RedisPassword`         | `""`        | Redis authentication password                                                                                                                        |
+| `RedisPoolSize`         | `10`        | Connection pool size                                                                                                                                 |
+| `RedisMaxRetries`       | `3`         | Redis connection retry attempts                                                                                                                      |
+| `RedisConnMaxIdleTime`  | `5m`        | Redis connection idle timeout                                                                                                                        |
+| `RedisPingTimeout`      | `5s`        | Redis ping timeout                                                                                                                                   |
+| `RedisPrefix`           | `surge`     | Prefix for all Redis keys (e.g. `surge:namespaces`, `surge:{ns}:queue:{queue}`). Use a custom prefix to share Redis across multiple Surge instances. |
+| `MaxWorkers`            | `25`        | Concurrent worker limit                                                                                                                              |
+| `MaxRetries`            | `25`        | Max retry attempts per job                                                                                                                           |
+| `DefaultNamespace`      | `default`   | Default queue namespace                                                                                                                              |
+| `ShutdownTimeout`       | `30s`       | Graceful shutdown timeout                                                                                                                            |
+| `DefaultJobTimeout`     | `5m`        | Default job execution timeout                                                                                                                        |
+| `RedisRecoveryInterval` | `30s`       | Stuck job check frequency                                                                                                                            |
+| `RedisRecoveryTimeout`  | `10m`       | Job considered stuck after                                                                                                                           |
+| `HeartbeatInterval`     | `5s`        | Worker heartbeat frequency                                                                                                                           |
+| `HeartbeatTTL`          | `30s`       | Worker heartbeat TTL                                                                                                                                 |
+| `PopTimeout`            | `5s`        | Queue pop timeout                                                                                                                                    |
+| `NackTimeout`           | `5s`        | Nack operation timeout                                                                                                                               |
 
 ---
 
 ## Job Builder API
+
+### Job Options Reference
+
+| Option          | Method                      | Description                                    |
+| --------------- | --------------------------- | ---------------------------------------------- |
+| **Priority**    | `.Priority(job.Priority)`   | Set job priority (Critical, High, Normal, Low) |
+| **Schedule**    | `.Schedule(time.Duration)`  | Delay job execution by a relative duration     |
+| **ScheduleAt**  | `.ScheduleAt(time.Time)`    | Schedule job execution at a specific time      |
+| **Namespace**   | `.Ns(string)`               | Route job to a specific namespace              |
+| **Uniqueness**  | `.UniqueFor(time.Duration)` | Prevent duplicate jobs for a duration          |
+| **Max Retries** | `.MaxRetries(int)`          | Override default max retry count               |
+| **Metadata**    | `.Metadata(map[string]any)` | Attach arbitrary key-value data to the job     |
 
 ### Topics vs Queues: Understanding the Difference
 
 Surge uses two related but distinct concepts for routing and storing jobs:
 
 **Topic** (Logical Routing)
+
 - The **semantic identifier** that determines which handler processes a job
 - Used for **routing** jobs to the correct handler function
 - Examples: `"email.sent"`, `"order.processed"`, `"SendEmail"` (type name)
@@ -225,6 +240,7 @@ Surge uses two related but distinct concepts for routing and storing jobs:
 - Think of it as: "What kind of work is this?"
 
 **Queue** (Physical Storage)
+
 - The **physical Redis data structure** (sorted set/list) where jobs are stored
 - Used for **storage and ordering** of jobs in Redis
 - Defaults to the topic name, but can be overridden
@@ -232,6 +248,7 @@ Surge uses two related but distinct concepts for routing and storing jobs:
 - Think of it as: "Where is this job stored in Redis?"
 
 **Default Behavior:**
+
 ```go
 // Topic = "SendEmail", Queue = "SendEmail" (defaults to topic)
 client.Job(SendEmail{}).Enqueue(ctx)
@@ -241,11 +258,13 @@ client.JobWithTopic("email.sent", SendEmail{}).Enqueue(ctx)
 ```
 
 **Key Insight:**
+
 - Currently, queue always defaults to the topic name (one-to-one mapping)
 - One topic maps to one handler
 - The queue is an implementation detail; the topic is your application's contract
 
 **When to Use Each:**
+
 - Use **topics** when you want to route jobs to specific handlers (most common)
 - The queue name is automatically derived from the topic, so you typically don't need to think about it
 
@@ -308,6 +327,20 @@ client.Job(AnalyticsEvent{}).
 ```
 
 Routes the job into a specific namespace, allowing you to isolate tenants, environments, or domains while still using a shared Surge cluster.
+
+### Metadata
+
+```go
+client.Job(ProcessImage{}).
+    Metadata(map[string]any{
+        "source": "upload_api",
+        "user_tier": "premium",
+        "trace_id": "123-abc",
+    }).
+    Enqueue(ctx)
+```
+
+Attach arbitrary key-value data to a job. This metadata is persisted with the job and available to handlers via `job.Metadata`, useful for tracing, audit logs, or context that doesn't belong in the job payload.
 
 ### Max Retries
 
