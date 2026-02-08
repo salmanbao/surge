@@ -56,10 +56,11 @@ type QueueInfo struct {
 }
 
 type QueueStats struct {
-	Pending    int64 `json:"pending"`
-	Processing int64 `json:"processing"`
-	Failed     int64 `json:"failed"`
-	Dead       int64 `json:"dead"`
-	Processed  int64 `json:"processed"`
-	Paused     bool  `json:"paused"`
+	Pending     int64 `json:"pending"`
+	Processing  int64 `json:"processing"`
+	Failed      int64 `json:"failed"`
+	Dead        int64 `json:"dead"`
+	Processed   int64 `json:"processed"`
+	MemoryUsage int64 `json:"memory_usage"`
+	Paused      bool  `json:"paused"`
 }

@@ -24,7 +24,7 @@ type Batch struct {
 type JobBuilder struct {
 	client     *Client
 	batch      *Batch
-	payload    interface{}
+	payload    any
 	topic      string
 	namespace  string
 	queue      string
@@ -33,6 +33,7 @@ type JobBuilder struct {
 	uniqueFor  *time.Duration
 	timeout    time.Duration
 	scheduleAt *time.Time
+	metadata   map[string]any
 }
 
 func (c *Client) Batch() *Batch {
@@ -42,7 +43,7 @@ func (c *Client) Batch() *Batch {
 	}
 }
 
-func (c *Client) Job(payload interface{}) *JobBuilder {
+func (c *Client) Job(payload any) *JobBuilder {
 	topic := getTopicName(payload)
 
 	return &JobBuilder{
@@ -58,7 +59,7 @@ func (c *Client) Job(payload interface{}) *JobBuilder {
 	}
 }
 
-func (c *Client) JobWithTopic(topic string, payload interface{}) *JobBuilder {
+func (c *Client) JobWithTopic(topic string, payload any) *JobBuilder {
 	return &JobBuilder{
 		client:     c,
 		batch:      nil,
@@ -72,7 +73,7 @@ func (c *Client) JobWithTopic(topic string, payload interface{}) *JobBuilder {
 	}
 }
 
-func getTopicName(payload interface{}) string {
+func getTopicName(payload any) string {
 	if str, ok := payload.(string); ok {
 		return str
 	}
@@ -120,7 +121,12 @@ func (jb *JobBuilder) ScheduleAt(t time.Time) *JobBuilder {
 	return jb
 }
 
-func (b *Batch) Job(payload interface{}) *JobBuilder {
+func (jb *JobBuilder) Metadata(md map[string]any) *JobBuilder {
+	jb.metadata = md
+	return jb
+}
+
+func (b *Batch) Job(payload any) *JobBuilder {
 	topic := getTopicName(payload)
 	return &JobBuilder{
 		client:     b.client,
@@ -193,6 +199,7 @@ func (jb *JobBuilder) buildEnvelope(ctx context.Context) (*job.JobEnvelope, erro
 		UniqueKey:  uniqueKey,
 		CreatedAt:  time.Now(),
 		Timeout:    int(jb.timeout.Seconds()),
+		Metadata:   jb.metadata,
 	}
 
 	return envelope, nil

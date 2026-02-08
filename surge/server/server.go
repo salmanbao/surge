@@ -144,9 +144,7 @@ func (s *DashboardServer) serveStaticFiles(mux *http.ServeMux, rootPath string) 
 
 		injection := baseTag + configScript
 
-		if strings.Contains(html, "<head>") {
-			html = strings.Replace(html, "<head>", "<head>"+injection, 1)
-		}
+		html = strings.Replace(html, "<head>", "<head>"+injection, 1)
 
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(html))
@@ -374,7 +372,7 @@ func (s *DashboardServer) handleGetScheduledJobs(w http.ResponseWriter, r *http.
 	}
 
 	// Wrapper for total count + data
-	response := map[string]interface{}{
+	response := map[string]any{
 		"jobs":  jobs,
 		"total": total,
 	}

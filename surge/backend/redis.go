@@ -141,7 +141,7 @@ func (r *RedisBackend) Push(ctx context.Context, job *job.JobEnvelope) error {
 	jobKey := r.jobDataKey(job.ID)
 
 	keys := []string{key, registryKey, queueRegistryKey, pauseKey, jobKey}
-	args := []interface{}{data, float64(job.Priority), job.Namespace, job.ID}
+	args := []any{data, float64(job.Priority), job.Namespace, job.ID}
 
 	if job.UniqueKey != "" {
 		keys = append(keys, fmt.Sprintf("%s:unique:%s", r.prefix, job.UniqueKey))
@@ -190,8 +190,6 @@ func (r *RedisBackend) PushBatch(ctx context.Context, jobs []*job.JobEnvelope) e
 		}
 
 		queueGroups[queueKey] = append(queueGroups[queueKey], job)
-		namespaces[job.Namespace] = true
-		queues[queueKey] = true
 	}
 
 	if len(queueInfo) > 0 {
@@ -408,14 +406,14 @@ func (r *RedisBackend) DispatchScheduledJobs(ctx context.Context, limit int) (in
 		return 0, &errors.BackendOperationError{Operation: "DispatchScheduledJobs", Err: err}
 	}
 
-	results, ok := res.([]interface{})
+	results, ok := res.([]any)
 	if !ok || len(results) == 0 {
 		return 0, nil
 	}
 
 	var envelopes []*job.JobEnvelope
 	for _, result := range results {
-		pair, ok := result.([]interface{})
+		pair, ok := result.([]any)
 		if !ok || len(pair) != 2 {
 			continue
 		}
@@ -425,17 +423,22 @@ func (r *RedisBackend) DispatchScheduledJobs(ctx context.Context, limit int) (in
 			continue
 		}
 
-		var envelope job.JobEnvelope
-		if err := json.Unmarshal([]byte(dataStr), &envelope); err != nil {
-			log.Printf("Failed to unmarshal scheduled job data: %v", err)
+		envelope := job.GetJobEnvelope()
+		if err := json.Unmarshal([]byte(dataStr), envelope); err != nil {
+			log.Printf("failed to unmarshal scheduled job data: %v", err)
+			job.PutJobEnvelope(envelope)
 			continue
 		}
 
-		envelopes = append(envelopes, &envelope)
+		envelopes = append(envelopes, envelope)
 	}
 
 	if len(envelopes) > 0 {
-		if err := r.PushBatch(ctx, envelopes); err != nil {
+		err := r.PushBatch(ctx, envelopes)
+		for _, e := range envelopes {
+			job.PutJobEnvelope(e)
+		}
+		if err != nil {
 			return 0, err
 		}
 	}
@@ -498,7 +501,7 @@ func (r *RedisBackend) Pop(ctx context.Context, queues []string, timeout time.Du
 				return nil, nil // no jobs
 			}
 
-			results, ok := res.([]interface{})
+			results, ok := res.([]any)
 			if !ok || len(results) != 2 {
 				return nil, &errors.BackendOperationError{
 					Operation: "Pop",
@@ -518,15 +521,16 @@ func (r *RedisBackend) Pop(ctx context.Context, queues []string, timeout time.Du
 				return nil, &errors.BackendOperationError{Operation: "Pop(get_data)", Err: err}
 			}
 
-			var envelope job.JobEnvelope
-			if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+			envelope := job.GetJobEnvelope()
+			if err := json.Unmarshal([]byte(data), envelope); err != nil {
+				job.PutJobEnvelope(envelope)
 				return nil, &errors.BackendOperationError{
 					Operation: "Pop",
 					Err:       err,
 				}
 			}
 
-			return &envelope, nil
+			return envelope, nil
 		}
 
 		select {
@@ -838,6 +842,7 @@ func (r *RedisBackend) QueueStats(ctx context.Context, namespace, queue string) 
 	failedCmd := pipe.LLen(ctx, dlqKey)
 	processedCmd := pipe.Get(ctx, statsKey)
 	pausedCmd := pipe.Exists(ctx, pauseKey)
+	memoryUsageCmd := pipe.MemoryUsage(ctx, queueKey)
 
 	_, err := pipe.Exec(ctx)
 	if err != nil && err != redis.Nil {
@@ -848,12 +853,13 @@ func (r *RedisBackend) QueueStats(ctx context.Context, namespace, queue string) 
 	isPaused := pausedCmd.Val() > 0
 
 	return &QueueStats{
-		Pending:    pendingCmd.Val(),
-		Processing: processingCmd.Val(),
-		Failed:     failedCmd.Val(),
-		Dead:       0,
-		Processed:  processed,
-		Paused:     isPaused,
+		Pending:     pendingCmd.Val(),
+		Processing:  processingCmd.Val(),
+		Failed:      failedCmd.Val(),
+		Dead:        0,
+		Processed:   processed,
+		MemoryUsage: memoryUsageCmd.Val(),
+		Paused:      isPaused,
 	}, nil
 }
 

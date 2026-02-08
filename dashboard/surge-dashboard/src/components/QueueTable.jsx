@@ -30,6 +30,15 @@ import { api } from "../services/api";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { getQueueModalConfig } from "../utils/queueModalConfig";
 
+function formatBytes(bytes, decimals = 2) {
+  if (!+bytes) return "0 B";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
 export function QueueTable({ queues, onStatsUpdate }) {
   return (
     <TableContainer component={Paper} elevation={2}>
@@ -38,8 +47,9 @@ export function QueueTable({ queues, onStatsUpdate }) {
           <TableRow>
             <TableCell>Queue</TableCell>
             <TableCell>State</TableCell>
-            <TableCell align="right">Size (Pending)</TableCell>
-            <TableCell align="right">Active</TableCell>
+            <TableCell align="right">Queued</TableCell>
+            <TableCell align="right">Processing</TableCell>
+            <TableCell align="right">Data Size</TableCell>
             <TableCell align="right">Processed</TableCell>
             <TableCell align="right">Failed</TableCell>
             <TableCell align="right">Error Rate</TableCell>
@@ -169,7 +179,6 @@ function QueueRow({ queue, onStatsUpdate, stats: propsStats }) {
     }
   };
 
-
   if (loading || !stats) {
     return (
       <TableRow>
@@ -180,7 +189,12 @@ function QueueRow({ queue, onStatsUpdate, stats: propsStats }) {
           </Box>
         </TableCell>
         <TableCell>
-          <Skeleton variant="rectangular" width={60} height={24} sx={{ borderRadius: 1 }} />
+          <Skeleton
+            variant="rectangular"
+            width={60}
+            height={24}
+            sx={{ borderRadius: 1 }}
+          />
         </TableCell>
         <TableCell align="right">
           <Skeleton variant="text" width={40} height={20} sx={{ ml: "auto" }} />
@@ -198,7 +212,12 @@ function QueueRow({ queue, onStatsUpdate, stats: propsStats }) {
           <Skeleton variant="text" width={50} height={20} sx={{ ml: "auto" }} />
         </TableCell>
         <TableCell align="right">
-          <Skeleton variant="circular" width={32} height={32} sx={{ ml: "auto" }} />
+          <Skeleton
+            variant="circular"
+            width={32}
+            height={32}
+            sx={{ ml: "auto" }}
+          />
         </TableCell>
       </TableRow>
     );
@@ -256,6 +275,12 @@ function QueueRow({ queue, onStatsUpdate, stats: propsStats }) {
           fontWeight={600}
         >
           {stats.processing}
+        </Typography>
+      </TableCell>
+
+      <TableCell align="right">
+        <Typography variant="body2" fontFamily="monospace">
+          {formatBytes(stats.memory_usage || 0)}
         </Typography>
       </TableCell>
 
