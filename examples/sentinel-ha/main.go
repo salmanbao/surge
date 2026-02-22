@@ -68,7 +68,8 @@ func main() {
 				return net.DialTimeout(network, addr, 5*time.Second)
 			},
 		},
-		MaxWorkers: 10,
+		DefaultNamespace: "platform",
+		MaxWorkers:       10,
 	}
 
 	client, err := surge.NewClient(ctx, cfg)
@@ -80,7 +81,7 @@ func main() {
 	log.Println("Successfully connected to Redis via Sentinel!")
 
 	client.Handle(HeartbeatJob{}, func(ctx context.Context, job *job.JobEnvelope) error {
-		log.Printf("Heartbeat processed at: %v", time.Now().Format(time.StampMilli))
+		log.Printf("[Namespace: %s] Heartbeat processed at: %v", job.Namespace, time.Now().Format(time.StampMilli))
 		return nil
 	})
 
@@ -113,12 +114,20 @@ func main() {
 			return
 
 		case t := <-ticker.C:
+			// Enqueue to Default Namespace ("platform")
 			err := client.Job(HeartbeatJob{Timestamp: t.Unix()}).Enqueue(ctx)
 			if err != nil {
-
-				log.Printf("Failed to enqueue: %v", err)
+				log.Printf("Failed to enqueue string default namespace: %v", err)
 			} else {
-				log.Println("Enqueued heartbeat")
+				log.Println("Enqueued heartbeat to platform")
+			}
+
+			// Enqueue to explicit Namespace ("payment")
+			err = client.Job(HeartbeatJob{Timestamp: t.Unix()}).WithNamespace("payment").Enqueue(ctx)
+			if err != nil {
+				log.Printf("Failed to enqueue to payment namespace: %v", err)
+			} else {
+				log.Println("Enqueued heartbeat to payment")
 			}
 		}
 	}

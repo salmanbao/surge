@@ -40,7 +40,8 @@ func main() {
 			Addr: "localhost:6379",
 			DB:   1,
 		},
-		MaxWorkers: 50,
+		DefaultNamespace: "platform",
+		MaxWorkers:       50,
 	}
 
 	client, err := surge.NewClient(ctx, cfg)

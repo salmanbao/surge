@@ -56,6 +56,7 @@ func main() {
 			Addr: "localhost:6379",
 			DB:   1,
 		},
+		DefaultNamespace: "payment",
 	}
 
 	client, err := surge.NewClient(ctx, cfg)
@@ -151,7 +152,7 @@ func main() {
 					}
 					batch.Job(order).
 						Priority(job.PriorityHigh).
-						Ns("ecommerce").
+						Ns("payment").
 						Enqueue(ctx)
 
 				case 1:
@@ -161,7 +162,7 @@ func main() {
 					}
 					batch.Job(notification).
 						Priority(job.PriorityNormal).
-						Ns("notifications").
+						Ns("communications").
 						Enqueue(ctx)
 
 				case 2:
@@ -171,7 +172,7 @@ func main() {
 					}
 					batch.Job(order).
 						Priority(job.PriorityHigh).
-						Ns("bulk-processing").
+						Ns("platform").
 						Enqueue(ctx)
 				}
 			}
@@ -193,7 +194,7 @@ func main() {
 }
 
 func showQueueStats(ctx context.Context, client *surge.Client, totalJobs int) {
-	namespaces := []string{"ecommerce", "notifications", "bulk-processing"}
+	namespaces := []string{"payment", "communications", "platform"}
 
 	fmt.Printf("\nQueue Stats (Total jobs: %d)\n", totalJobs)
 	fmt.Println("─" + "────────────────────────────────────")
@@ -203,11 +204,11 @@ func showQueueStats(ctx context.Context, client *surge.Client, totalJobs int) {
 	for _, ns := range namespaces {
 		var queueName string
 		switch ns {
-		case "ecommerce":
+		case "payment":
 			queueName = "process_order"
-		case "notifications":
+		case "communications":
 			queueName = "send_notification"
-		case "bulk-processing":
+		case "platform":
 			queueName = "process_order"
 		}
 
