@@ -212,7 +212,7 @@ func showQueueStats(ctx context.Context, client *surge.Client, totalJobs int) {
 			queueName = "process_order"
 		}
 
-		stats, err := client.Backend().QueueStats(ctx, ns, queueName)
+		stats, err := client.Backend().QueueStats(ctx, ns, queueName, time.Time{}, time.Time{})
 		if err != nil {
 			continue
 		}

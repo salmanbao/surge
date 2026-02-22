@@ -1,7 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
-import { Box, Paper, Typography, Button, Grid, Chip } from "@mui/material";
+import {
+  Box,
+  Paper,
+  Typography,
+  Button,
+  Grid,
+  Chip,
+  ToggleButton,
+  ToggleButtonGroup,
+  TextField,
+} from "@mui/material";
 import {
   Refresh as RefreshIcon,
   AccessTime as AccessTimeIcon,
@@ -37,6 +47,19 @@ function HomePage({
   const [initialLoad, setInitialLoad] = useState(true);
   const [queuePage, setQueuePage] = useState(1);
   const [queuePageSize, setQueuePageSize] = useState(25);
+
+  const PRESETS = [
+    { label: "1d", days: 1 },
+    { label: "7d", days: 7 },
+    { label: "14d", days: 14 },
+    { label: "30d", days: 30 },
+  ];
+  const toDateStr = (d) => d.toISOString().slice(0, 10);
+  const [chartPreset, setChartPreset] = useState("1d");
+  const today = toDateStr(new Date());
+  const [chartFrom, setChartFrom] = useState(today);
+  const [chartTo, setChartTo] = useState(today);
+  const isHistorical = true;
 
   const [prevNs, setPrevNs] = useState(selectedNs);
   if (prevNs !== selectedNs) {
@@ -84,12 +107,15 @@ function HomePage({
 
   const fetchBatchStats = useCallback(async () => {
     try {
-      const data = await api.getBatchQueueStats(selectedNs);
+      const data = await api.getBatchQueueStats(
+        selectedNs,
+        chartFrom && chartTo ? { from: chartFrom, to: chartTo } : {},
+      );
       setQueueStats(buildStatsMap(data));
     } catch (err) {
       handleApiError(err, "Batch stats error");
     }
-  }, [selectedNs]);
+  }, [selectedNs, chartFrom, chartTo]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -113,6 +139,26 @@ function HomePage({
     ...q,
     stats: queueStats[`${q.namespace}:${q.name}`],
   }));
+
+  const handleChartPreset = (_, p) => {
+    if (!p) return;
+    setChartPreset(p);
+    const days = PRESETS.find((x) => x.label === p)?.days ?? 1;
+    const toDate = new Date();
+    const fromDate = new Date();
+    fromDate.setDate(toDate.getDate() - (days - 1));
+    setChartFrom(toDateStr(fromDate));
+    setChartTo(toDateStr(toDate));
+  };
+
+  const handleCustomChartFrom = (e) => {
+    setChartPreset(null);
+    setChartFrom(e.target.value);
+  };
+  const handleCustomChartTo = (e) => {
+    setChartPreset(null);
+    setChartTo(e.target.value);
+  };
 
   const totalQueuePages = Math.ceil(queuesWithStats.length / queuePageSize);
   const startQueueIndex = (queuePage - 1) * queuePageSize;
@@ -198,11 +244,77 @@ function HomePage({
           <Grid item xs={12}>
             <Paper elevation={2} sx={{ p: 3 }}>
               <Box
-                sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 2,
+                  mb: 2,
+                }}
               >
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
                   Queue Overview
+                  {isHistorical && (
+                    <Typography
+                      component="span"
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ ml: 1, fontWeight: 400 }}
+                    >
+                      ·{" "}
+                      {chartFrom === chartTo
+                        ? "Today"
+                        : `${chartFrom} → ${chartTo}`}
+                    </Typography>
+                  )}
                 </Typography>
+
+                {/* Date-range controls */}
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <ToggleButtonGroup
+                    value={chartPreset}
+                    exclusive
+                    onChange={handleChartPreset}
+                    size="small"
+                  >
+                    {PRESETS.map((p) => (
+                      <ToggleButton
+                        key={p.label}
+                        value={p.label}
+                        sx={{ px: 1.5 }}
+                      >
+                        {p.label}
+                      </ToggleButton>
+                    ))}
+                  </ToggleButtonGroup>
+                  <TextField
+                    type="date"
+                    size="small"
+                    value={chartFrom}
+                    onChange={handleCustomChartFrom}
+                    inputProps={{ max: chartTo || undefined }}
+                    sx={{ width: 140 }}
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    to
+                  </Typography>
+                  <TextField
+                    type="date"
+                    size="small"
+                    value={chartTo}
+                    onChange={handleCustomChartTo}
+                    inputProps={{ min: chartFrom || undefined }}
+                    sx={{ width: 140 }}
+                  />
+                </Box>
               </Box>
               <CombinedQueueChart queues={queuesWithStats} />
             </Paper>
