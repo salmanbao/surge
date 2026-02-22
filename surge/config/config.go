@@ -12,30 +12,63 @@ import (
 )
 
 type Config struct {
-	Driver driver.Driver // "redis" (default)
+	// Storage driver to use ("redis", "memory", or "custom"). Currently only uses "redis".
+	Driver driver.Driver
 
+	// Interval between checking for stalled jobs to recover. Defaults to 30s.
 	RedisRecoveryInterval time.Duration
-	RedisRecoveryTimeout  time.Duration
-	RedisFailover         *redis.FailoverOptions
-	RedisOptions          *redis.Options
 
-	MemoryMaxJobs     int
-	CustomBackend     backend.Backend
-	Namespaces        []string
-	DefaultNamespace  string
-	MaxWorkers        int
-	PollInterval      time.Duration
-	ScanInterval      time.Duration
-	ShutdownTimeout   time.Duration
-	MaxRetries        int
-	PipelineSize      int
+	// How long a job must be stuck in "processing" before it is considered stalled and recovered. Defaults to 10m.
+	RedisRecoveryTimeout time.Duration
+
+	// Configuration for connecting to a High-Availability Redis Sentinel cluster.
+	RedisFailover *redis.FailoverOptions
+
+	// Configuration for connecting to a standalone Redis instance.
+	RedisOptions *redis.Options
+
+	// The default namespace queue where untagged jobs will be routed.
+	// If omitted, Surge automatically sets this to "default".
+	DefaultNamespace string
+
+	// Maximum number of concurrent worker goroutines polling for jobs within a single consumer instance. Defaults to 25.
+	MaxWorkers int
+
+	// How often the consumer should poll Redis for new jobs when idle. Defaults to 100ms.
+	PollInterval time.Duration
+
+	// How often the scheduler sweeps for scheduled/delayed jobs to activate. Defaults to 15s.
+	ScanInterval time.Duration
+
+	// How long to wait for active workers to finish processing during graceful shutdown before forcefully exiting. Defaults to 30s.
+	ShutdownTimeout time.Duration
+
+	// Maximum number of times a failing job will be retried before being dropped. Defaults to 25.
+	MaxRetries int
+
+	// Maximum number of Redis commands to batch together before executing a pipeline. Defaults to 100.
+	PipelineSize int
+
+	// How often the consumer sends heartbeat signals to Redis to prove it is alive. Defaults to 5s.
 	HeartbeatInterval time.Duration
-	HeartbeatTTL      time.Duration
-	PopTimeout        time.Duration
-	NackTimeout       time.Duration
+
+	// How long a consumer's heartbeat is considered valid before the cluster assumes it has crashed or isn't available to consume jobs. Defaults to 30s.
+	HeartbeatTTL time.Duration
+
+	// Maximum time to block in Redis waiting for a new job via BLPOP before timing out and trying again. Defaults to 5s.
+	PopTimeout time.Duration
+
+	// Maximum time to wait for a NACK (Negative Acknowledge) operation to succeed when a job fails. Defaults to 5s.
+	NackTimeout time.Duration
+
+	// Default hard-timeout for how long a job handler can run before its context is cancelled. Defaults to 5m.
 	DefaultJobTimeout time.Duration
-	RedisPingTimeout  time.Duration
-	RedisPrefix       string
+
+	// Timeout for verifying the connection to Redis during startup. Defaults to 5s.
+	RedisPingTimeout time.Duration
+
+	// Prefix added to all Surge-related keys in Redis (e.g., "surge:queue:default"). Defaults to "surge".
+	RedisPrefix string
 }
 
 func (c *Config) SetDefaults() {
@@ -56,11 +89,6 @@ func (c *Config) SetDefaults() {
 		}
 		if c.RedisRecoveryTimeout == 0 {
 			c.RedisRecoveryTimeout = 10 * time.Minute
-		}
-	}
-	if c.Driver == driver.DriverMemory {
-		if c.MemoryMaxJobs == 0 {
-			c.MemoryMaxJobs = 10000
 		}
 	}
 	if c.DefaultNamespace == "" {
@@ -133,16 +161,6 @@ func (c *Config) Validate() error {
 			return errors.New("redis_failover or redis_options must be provided")
 		}
 
-	case driver.DriverMemory:
-		if c.MemoryMaxJobs < 1 {
-			return errors.New("memory_max_jobs must be >= 1")
-		}
-
-	case driver.DriverCustom:
-		if c.CustomBackend == nil {
-			return errors.New("custom_backend must be provided when driver is 'custom'")
-		}
-
 	default:
 		return errors.New("unsupported driver: " + string(c.Driver))
 	}
@@ -166,11 +184,6 @@ func (c *Config) CreateBackend(ctx context.Context) (backend.Backend, error) {
 			Options:          c.RedisOptions,
 		}
 		return backend.NewRedisBackend(ctx, redisCfg)
-	case driver.DriverCustom:
-		if c.CustomBackend == nil {
-			return nil, errors.New("custom_backend must be provided when driver is 'custom'")
-		}
-		return c.CustomBackend, nil
 	default:
 		return nil, errors.New("unsupported driver: " + string(c.Driver))
 	}
