@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/olamilekan000/surge/surge/backend"
 	"github.com/olamilekan000/surge/surge/driver"
 )
@@ -12,26 +14,19 @@ import (
 type Config struct {
 	Driver driver.Driver // "redis" (default)
 
-	RedisURL             string
-	RedisHost            string
-	RedisPort            int
-	RedisDB              int
-	RedisPassword        string
-	RedisUsername        string
-	RedisPoolSize        int
-	RedisMaxRetries      int
-	RedisConnMaxIdleTime time.Duration
 	RedisRecoveryInterval time.Duration
 	RedisRecoveryTimeout  time.Duration
+	RedisFailover         *redis.FailoverOptions
+	RedisOptions          *redis.Options
 
-	MemoryMaxJobs    int
-	CustomBackend    backend.Backend
-	Namespaces       []string
-	DefaultNamespace string
-	MaxWorkers       int
-	PollInterval     time.Duration
-	ScanInterval     time.Duration
-	ShutdownTimeout  time.Duration
+	MemoryMaxJobs     int
+	CustomBackend     backend.Backend
+	Namespaces        []string
+	DefaultNamespace  string
+	MaxWorkers        int
+	PollInterval      time.Duration
+	ScanInterval      time.Duration
+	ShutdownTimeout   time.Duration
 	MaxRetries        int
 	PipelineSize      int
 	HeartbeatInterval time.Duration
@@ -48,20 +43,13 @@ func (c *Config) SetDefaults() {
 		c.Driver = driver.DriverRedis
 	}
 	if c.Driver == driver.DriverRedis {
-		if c.RedisHost == "" && c.RedisURL == "" {
-			c.RedisHost = "localhost"
-		}
-		if c.RedisPort == 0 {
-			c.RedisPort = 6379
-		}
-		if c.RedisPoolSize == 0 {
-			c.RedisPoolSize = 10
-		}
-		if c.RedisMaxRetries == 0 {
-			c.RedisMaxRetries = 3
-		}
-		if c.RedisConnMaxIdleTime == 0 {
-			c.RedisConnMaxIdleTime = 5 * time.Minute
+		if c.RedisFailover == nil && c.RedisOptions == nil {
+			c.RedisOptions = &redis.Options{
+				Addr:            "localhost:6379",
+				PoolSize:        10,
+				MaxRetries:      3,
+				ConnMaxIdleTime: 5 * time.Minute,
+			}
 		}
 		if c.RedisRecoveryInterval == 0 {
 			c.RedisRecoveryInterval = 30 * time.Second
@@ -141,14 +129,8 @@ func (c *Config) Validate() error {
 
 	switch c.Driver {
 	case driver.DriverRedis, "":
-		if c.RedisURL == "" && c.RedisHost == "" {
-			return errors.New("redis_url or redis_host must be provided")
-		}
-		if c.RedisPort < 0 || c.RedisPort > 65535 {
-			return errors.New("redis_port must be between 0 and 65535")
-		}
-		if c.RedisPoolSize < 1 {
-			return errors.New("redis_pool_size must be >= 1")
+		if c.RedisFailover == nil && c.RedisOptions == nil {
+			return errors.New("redis_failover or redis_options must be provided")
 		}
 
 	case driver.DriverMemory:
@@ -176,19 +158,12 @@ func (c *Config) CreateBackend(ctx context.Context) (backend.Backend, error) {
 	switch c.Driver {
 	case driver.DriverRedis, "":
 		redisCfg := backend.RedisConfig{
-			URL:              c.RedisURL,
-			Host:             c.RedisHost,
-			Port:             c.RedisPort,
-			DB:               c.RedisDB,
-			Password:         c.RedisPassword,
-			Username:         c.RedisUsername,
-			PoolSize:         c.RedisPoolSize,
-			MaxRetries:       c.RedisMaxRetries,
-			ConnMaxIdleTime:  c.RedisConnMaxIdleTime,
 			RecoveryInterval: c.RedisRecoveryInterval,
 			RecoveryTimeout:  c.RedisRecoveryTimeout,
 			PingTimeout:      c.RedisPingTimeout,
 			Prefix:           c.RedisPrefix,
+			Failover:         c.RedisFailover,
+			Options:          c.RedisOptions,
 		}
 		return backend.NewRedisBackend(ctx, redisCfg)
 	case driver.DriverCustom:

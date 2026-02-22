@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/olamilekan000/surge/surge"
 	"github.com/olamilekan000/surge/surge/config"
 	"github.com/olamilekan000/surge/surge/job"
@@ -34,9 +36,10 @@ func main() {
 	}()
 
 	cfg := &config.Config{
-		RedisHost:  "localhost",
-		RedisPort:  6379,
-		RedisDB:    1,
+		RedisOptions: &redis.Options{
+			Addr: "localhost:6379",
+			DB:   1,
+		},
 		MaxWorkers: 50,
 	}
 
