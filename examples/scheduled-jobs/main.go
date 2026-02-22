@@ -27,6 +27,7 @@ func main() {
 			Addr: "localhost:6379",
 			DB:   1,
 		},
+		DefaultNamespace: "communications",
 	}
 	client, _ := surge.NewClient(context.Background(), cfg)
 	defer client.Close()
