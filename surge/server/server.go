@@ -250,7 +250,7 @@ func (s *DashboardServer) handleGetQueueStats(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	stats, err := s.Backend.QueueStats(r.Context(), namespace, queue)
+	stats, err := s.Backend.QueueStats(r.Context(), namespace, queue, time.Time{}, time.Time{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -264,6 +264,19 @@ func (s *DashboardServer) handleGetBatchQueueStats(w http.ResponseWriter, r *htt
 	if namespace == "" {
 		namespace = "default"
 	}
+
+	today := time.Now().UTC().Format("2006-01-02")
+	fromStr := r.URL.Query().Get("from")
+	toStr := r.URL.Query().Get("to")
+	if fromStr == "" {
+		fromStr = today
+	}
+	if toStr == "" {
+		toStr = today
+	}
+
+	from, _ := time.Parse("2006-01-02", fromStr)
+	to, _ := time.Parse("2006-01-02", toStr)
 
 	queues, err := s.Backend.DiscoverQueues(r.Context())
 	if err != nil {
@@ -290,7 +303,7 @@ func (s *DashboardServer) handleGetBatchQueueStats(w http.ResponseWriter, r *htt
 			continue
 		}
 
-		stats, err := s.Backend.QueueStats(r.Context(), queueNs, queueName)
+		stats, err := s.Backend.QueueStats(r.Context(), queueNs, queueName, from, to)
 		if err != nil {
 			continue
 		}
@@ -332,7 +345,7 @@ func (s *DashboardServer) handleQueueStatsStream(w http.ResponseWriter, r *http.
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			stats, err := s.Backend.QueueStats(ctx, namespace, queue)
+			stats, err := s.Backend.QueueStats(ctx, namespace, queue, time.Time{}, time.Time{})
 			if err != nil {
 				continue
 			}
