@@ -149,8 +149,6 @@ export function CombinedQueueChart({ queues }) {
   );
 }
 
-// Historical chart — per-queue daily processed/failed over a date range.
-// Calls getQueueStats with optional from/to params so no separate endpoint is needed.
 export function HistoricalQueueChart({ namespace, queue }) {
   const [preset, setPreset] = useState("7d");
   const [from, setFrom] = useState(() => {

@@ -5,7 +5,7 @@
 Surge is a distributed, Redis-backed job queue built specifically for Platform and SaaS teams. It comes with built-in multi-tenancy, real-time monitoring, and the reliability controls needed to scale to millions of jobs.
 
 <p align="center">
-  <img src="./surge.gif" alt="Surge dashboard and queue activity" width="800" />
+  <img src="./surge.mp4" alt="Surge dashboard and queue activity" width="800" />
 </p>
 
 ## Features
