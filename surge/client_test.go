@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -57,8 +58,9 @@ func SetupTestWrapper(t *testing.T) *testContext {
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		RedisHost:        host,
-		RedisPort:        port,
+		RedisOptions: &redis.Options{
+			Addr: fmt.Sprintf("%s:%d", host, port),
+		},
 		RedisPingTimeout: 1 * time.Second,
 	}
 	cfg.SetDefaults()

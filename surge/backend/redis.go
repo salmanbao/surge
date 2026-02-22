@@ -16,19 +16,12 @@ import (
 )
 
 type RedisConfig struct {
-	URL              string
-	Host             string
-	Port             int
-	DB               int
-	Password         string
-	Username         string
-	PoolSize         int
-	MaxRetries       int
-	ConnMaxIdleTime  time.Duration
 	RecoveryInterval time.Duration
 	RecoveryTimeout  time.Duration
 	PingTimeout      time.Duration
 	Prefix           string
+	Failover         *redis.FailoverOptions
+	Options          *redis.Options
 }
 
 type RedisBackend struct {
@@ -40,18 +33,21 @@ type RedisBackend struct {
 	recoveryWG       sync.WaitGroup
 }
 
-func NewRedisBackend(ctx context.Context, cfg RedisConfig) (*RedisBackend, error) {
-	opts := &redis.Options{
-		Addr:            fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Password:        cfg.Password,
-		Username:        cfg.Username,
-		DB:              cfg.DB,
-		PoolSize:        cfg.PoolSize,
-		MaxRetries:      cfg.MaxRetries,
-		ConnMaxIdleTime: cfg.ConnMaxIdleTime,
+func createRedisClient(cfg RedisConfig) (*redis.Client, error) {
+	if cfg.Failover != nil {
+		return redis.NewFailoverClient(cfg.Failover), nil
 	}
+	if cfg.Options != nil {
+		return redis.NewClient(cfg.Options), nil
+	}
+	return nil, fmt.Errorf("either Failover or Options must be provided to RedisBackend")
+}
 
-	client := redis.NewClient(opts)
+func NewRedisBackend(ctx context.Context, cfg RedisConfig) (*RedisBackend, error) {
+	client, err := createRedisClient(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	pingTimeout := cfg.PingTimeout
 	if pingTimeout == 0 {
