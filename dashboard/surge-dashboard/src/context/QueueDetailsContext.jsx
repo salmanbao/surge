@@ -5,7 +5,7 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { api, API_BASE } from "../services/api";
 
@@ -13,6 +13,7 @@ const QueueDetailsContext = createContext(null);
 
 export function QueueDetailsProvider({ children }) {
   const { namespace, queue } = useParams();
+  const location = useLocation();
 
   // Dashboard State
   const [stats, setStats] = useState(null);
@@ -26,7 +27,7 @@ export function QueueDetailsProvider({ children }) {
   });
 
   // Tabs & View State
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState(location.state?.openDLQ ? 0 : 0);
   const [viewMode, setViewMode] = useState("table");
   const [searchQuery, setSearchQuery] = useState("");
 

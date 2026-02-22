@@ -63,19 +63,21 @@ export const api = {
     return parseJSONResponse(res);
   },
 
-  getQueueStats: async (namespace, queue) => {
-    const res = await fetch(
-      `${API_BASE}/queue/stats?namespace=${namespace}&queue=${queue}`,
-    );
+  getQueueStats: async (namespace, queue, { from, to } = {}) => {
+    let url = `${API_BASE}/queue/stats?namespace=${namespace}&queue=${queue}`;
+    if (from) url += `&from=${from}`;
+    if (to) url += `&to=${to}`;
+    const res = await fetch(url);
     if (!res.ok)
       throw new Error(`Failed to fetch stats: ${res.status} ${res.statusText}`);
     return parseJSONResponse(res);
   },
 
-  getBatchQueueStats: async (namespace) => {
-    const res = await fetch(
-      `${API_BASE}/queue/stats/batch?namespace=${namespace}`,
-    );
+  getBatchQueueStats: async (namespace, { from, to } = {}) => {
+    let url = `${API_BASE}/queue/stats/batch?namespace=${namespace}`;
+    if (from) url += `&from=${from}`;
+    if (to) url += `&to=${to}`;
+    const res = await fetch(url);
     if (!res.ok)
       throw new Error(
         `Failed to fetch batch stats: ${res.status} ${res.statusText}`,

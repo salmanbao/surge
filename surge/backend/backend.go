@@ -31,7 +31,7 @@ type Backend interface {
 	DiscoverQueues(ctx context.Context) ([]string, error)
 	GetNamespaces(ctx context.Context) ([]string, error)
 
-	QueueStats(ctx context.Context, namespace, queue string) (*QueueStats, error)
+	QueueStats(ctx context.Context, namespace, queue string, from, to time.Time) (*QueueStats, error)
 
 	InspectDLQ(ctx context.Context, namespace, queue string, offset, limit int) ([]*job.JobEnvelope, error)
 	RetryFromDLQ(ctx context.Context, jobID string) error
@@ -58,6 +58,7 @@ type QueueInfo struct {
 type QueueStats struct {
 	Pending     int64 `json:"pending"`
 	Processing  int64 `json:"processing"`
+	Scheduled   int64 `json:"scheduled"`
 	Failed      int64 `json:"failed"`
 	Dead        int64 `json:"dead"`
 	Processed   int64 `json:"processed"`
