@@ -116,6 +116,14 @@ function QueueRow({ queue, onStatsUpdate, stats: propsStats }) {
       return;
     }
 
+    if (action === "dlq") {
+      navigate(
+        `/queue/${encodeURIComponent(queue.namespace)}/${encodeURIComponent(queue.name)}`,
+        { state: { openDLQ: true } },
+      );
+      return;
+    }
+
     setConfirmModal({ isOpen: true, action });
   };
 

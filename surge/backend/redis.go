@@ -267,6 +267,10 @@ func (r *RedisBackend) scheduledKey() string {
 	return fmt.Sprintf("%s:scheduled", r.prefix)
 }
 
+func (r *RedisBackend) statsDayKey(namespace, queue, date string) string {
+	return fmt.Sprintf("%s:%s:%s:stats:day:%s", r.prefix, namespace, queue, date)
+}
+
 var scheduleCmd = redis.NewScript(`
 	local scheduledKey = KEYS[1]
 	local jobKey = KEYS[2]
@@ -632,6 +636,13 @@ func (r *RedisBackend) Ack(ctx context.Context, envelope *job.JobEnvelope) error
 	if res.(int64) == 0 {
 		log.Printf("Warning: Ack failed for job %s (lock lost/expired)", envelope.ID)
 	}
+
+	dayKey := r.statsDayKey(envelope.Namespace, envelope.Queue, time.Now().UTC().Format("2006-01-02"))
+	pipe := r.client.Pipeline()
+	pipe.Incr(ctx, dayKey+":processed")
+	pipe.Expire(ctx, dayKey+":processed", 90*24*time.Hour)
+	pipe.Exec(ctx)
+
 	return nil
 }
 
@@ -749,6 +760,12 @@ func (r *RedisBackend) MoveToDLQ(ctx context.Context, envelope *job.JobEnvelope)
 		return &errors.BackendOperationError{Operation: "MoveToDLQ", Err: err}
 	}
 
+	dayKey := r.statsDayKey(envelope.Namespace, envelope.Queue, time.Now().UTC().Format("2006-01-02"))
+	pipe := r.client.Pipeline()
+	pipe.Incr(ctx, dayKey+":failed")
+	pipe.Expire(ctx, dayKey+":failed", 90*24*time.Hour)
+	pipe.Exec(ctx) //nolint:errcheck
+
 	return nil
 }
 
@@ -825,34 +842,87 @@ func (r *RedisBackend) DiscoverQueues(ctx context.Context) ([]string, error) {
 	return allQueueKeys, nil
 }
 
-func (r *RedisBackend) QueueStats(ctx context.Context, namespace, queue string) (*QueueStats, error) {
+func (r *RedisBackend) QueueStats(ctx context.Context, namespace, queue string, from, to time.Time) (*QueueStats, error) {
 	queueKey := r.queueKey(namespace, queue)
 	processingKey := r.processingKey(namespace, queue)
 	dlqKey := r.dlqKey(namespace, queue)
-	statsKey := fmt.Sprintf("%s:processed", queueKey)
 	pauseKey := r.pauseKey(namespace, queue)
 
 	pipe := r.client.Pipeline()
 	pendingCmd := pipe.ZCard(ctx, queueKey)
 	processingCmd := pipe.ZCard(ctx, processingKey)
 	failedCmd := pipe.LLen(ctx, dlqKey)
-	processedCmd := pipe.Get(ctx, statsKey)
 	pausedCmd := pipe.Exists(ctx, pauseKey)
 	memoryUsageCmd := pipe.MemoryUsage(ctx, queueKey)
 
-	_, err := pipe.Exec(ctx)
-	if err != nil && err != redis.Nil {
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
 		return nil, &errors.BackendOperationError{Operation: "QueueStats", Err: err}
 	}
 
-	processed, _ := processedCmd.Int64()
 	isPaused := pausedCmd.Val() > 0
+
+	var scheduledCount int64
+	scheduledIDs, scanErr := r.client.ZRange(ctx, r.scheduledKey(), 0, -1).Result()
+	if scanErr == nil && len(scheduledIDs) > 0 {
+		pipe2 := r.client.Pipeline()
+		getCmds := make([]*redis.StringCmd, len(scheduledIDs))
+		for i, jobID := range scheduledIDs {
+			getCmds[i] = pipe2.Get(ctx, r.jobDataKey(jobID))
+		}
+		pipe2.Exec(ctx) //nolint:errcheck
+		for _, cmd := range getCmds {
+			data, getErr := cmd.Result()
+			if getErr != nil {
+				continue
+			}
+			var envelope job.JobEnvelope
+			if json.Unmarshal([]byte(data), &envelope) == nil &&
+				envelope.Namespace == namespace && envelope.Queue == queue {
+				scheduledCount++
+			}
+		}
+	}
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	if from.IsZero() {
+		from = today
+	}
+	if to.IsZero() {
+		to = today
+	}
+	from = from.UTC().Truncate(24 * time.Hour)
+	to = to.UTC().Truncate(24 * time.Hour)
+
+	var dates []string
+	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d.Format("2006-01-02"))
+	}
+
+	var processed, failed int64
+	if len(dates) > 0 {
+		pipe3 := r.client.Pipeline()
+		processedCmds := make([]*redis.StringCmd, len(dates))
+		failedCmds := make([]*redis.StringCmd, len(dates))
+		for i, date := range dates {
+			dayKey := r.statsDayKey(namespace, queue, date)
+			processedCmds[i] = pipe3.Get(ctx, dayKey+":processed")
+			failedCmds[i] = pipe3.Get(ctx, dayKey+":failed")
+		}
+		pipe3.Exec(ctx) //nolint:errcheck
+		for i := range dates {
+			p, _ := processedCmds[i].Int64()
+			f, _ := failedCmds[i].Int64()
+			processed += p
+			failed += f
+		}
+	}
 
 	return &QueueStats{
 		Pending:     pendingCmd.Val(),
 		Processing:  processingCmd.Val(),
+		Scheduled:   scheduledCount,
 		Failed:      failedCmd.Val(),
-		Dead:        0,
+		Dead:        failed,
 		Processed:   processed,
 		MemoryUsage: memoryUsageCmd.Val(),
 		Paused:      isPaused,

@@ -114,7 +114,6 @@ func main() {
 			return
 
 		case t := <-ticker.C:
-			// Enqueue to Default Namespace ("platform")
 			err := client.Job(HeartbeatJob{Timestamp: t.Unix()}).Enqueue(ctx)
 			if err != nil {
 				log.Printf("Failed to enqueue string default namespace: %v", err)
@@ -122,8 +121,7 @@ func main() {
 				log.Println("Enqueued heartbeat to platform")
 			}
 
-			// Enqueue to explicit Namespace ("payment")
-			err = client.Job(HeartbeatJob{Timestamp: t.Unix()}).WithNamespace("payment").Enqueue(ctx)
+			err = client.Job(HeartbeatJob{Timestamp: t.Unix()}).Ns("payment").Enqueue(ctx)
 			if err != nil {
 				log.Printf("Failed to enqueue to payment namespace: %v", err)
 			} else {
