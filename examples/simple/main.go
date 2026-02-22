@@ -71,6 +71,7 @@ func main() {
 			Addr: "localhost:6379",
 			DB:   1,
 		},
+		DefaultNamespace: "platform",
 	}
 
 	client, err := surge.NewClient(ctx, cfg)
@@ -98,7 +99,7 @@ func main() {
 
 	// Job in specific namespace
 	client.Job(&ProcessPayment{PaymentID: "pay_456", Amount: 99.99, Currency: "USD"}).
-		Ns("shop_123").
+		Ns("payment").
 		Enqueue(ctx)
 
 	// Job that will fail (to test Nack/retry)
@@ -180,7 +181,7 @@ func main() {
 			To:      fmt.Sprintf("user%d@example.com", i),
 			Subject: fmt.Sprintf("Batch email #%d", i),
 		}).
-			Ns("shop_123").
+			Ns("communications").
 			Priority(job.PriorityHigh).
 			Enqueue(ctx)
 	}
