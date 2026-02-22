@@ -58,8 +58,9 @@ func main() {
     ctx := context.Background()
 
     cfg := &config.Config{
-        RedisHost:  "localhost",
-        RedisPort:  6379,
+        RedisOptions: &redis.Options{
+            Addr: "localhost:6379",
+        },
         MaxWorkers: 50,
     }
 
@@ -153,9 +154,10 @@ client.Job(SendEmail{}).Ns("shop_456").Enqueue(ctx)
 
 ```go
 cfg := &config.Config{
-    RedisHost:  "localhost",
-    RedisPort:  6379,
-    RedisDB:    0,
+    RedisOptions: &redis.Options{
+        Addr: "localhost:6379",
+        DB:   0,
+    },
     MaxWorkers: 50,
 }
 ```
@@ -164,12 +166,13 @@ cfg := &config.Config{
 
 ```go
 cfg := &config.Config{
-    RedisHost:            "redis.production.com",
-    RedisPort:            6379,
-    RedisPassword:        os.Getenv("REDIS_PASSWORD"),
-    RedisPoolSize:        100,
-    RedisMaxRetries:      3,
-    RedisConnMaxIdleTime: 5 * time.Minute,
+    RedisOptions: &redis.Options{
+        Addr:            "redis.production.com:6379",
+        Password:        os.Getenv("REDIS_PASSWORD"),
+        PoolSize:        100,
+        MaxRetries:      3,
+        ConnMaxIdleTime: 5 * time.Minute,
+    },
 
     MaxWorkers:       100,
     MaxRetries:       25,
@@ -186,30 +189,42 @@ cfg := &config.Config{
 }
 ```
 
+### High Availability (Redis Sentinel)
+
+For HA setups, you can pass a `redis.FailoverOptions` instead of `redis.Options`:
+
+```go
+cfg := &config.Config{
+    // Use RedisFailover instead of RedisOptions
+    RedisFailover: &redis.FailoverOptions{
+        MasterName:    "mymaster",
+        SentinelAddrs: []string{"sentinel1:26379", "sentinel2:26379"},
+        Password:      os.Getenv("REDIS_PASSWORD"),
+    },
+
+    MaxWorkers: 50,
+}
+```
+
 ### Configuration Reference
 
-| Parameter               | Default     | Description                                                                                                                                          |
-| ----------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RedisHost`             | `localhost` | Redis server hostname                                                                                                                                |
-| `RedisPort`             | `6379`      | Redis server port                                                                                                                                    |
-| `RedisDB`               | `0`         | Redis database number                                                                                                                                |
-| `RedisPassword`         | `""`        | Redis authentication password                                                                                                                        |
-| `RedisPoolSize`         | `10`        | Connection pool size                                                                                                                                 |
-| `RedisMaxRetries`       | `3`         | Redis connection retry attempts                                                                                                                      |
-| `RedisConnMaxIdleTime`  | `5m`        | Redis connection idle timeout                                                                                                                        |
-| `RedisPingTimeout`      | `5s`        | Redis ping timeout                                                                                                                                   |
-| `RedisPrefix`           | `surge`     | Prefix for all Redis keys (e.g. `surge:namespaces`, `surge:{ns}:queue:{queue}`). Use a custom prefix to share Redis across multiple Surge instances. |
-| `MaxWorkers`            | `25`        | Concurrent worker limit                                                                                                                              |
-| `MaxRetries`            | `25`        | Max retry attempts per job                                                                                                                           |
-| `DefaultNamespace`      | `default`   | Default queue namespace                                                                                                                              |
-| `ShutdownTimeout`       | `30s`       | Graceful shutdown timeout                                                                                                                            |
-| `DefaultJobTimeout`     | `5m`        | Default job execution timeout                                                                                                                        |
-| `RedisRecoveryInterval` | `30s`       | Stuck job check frequency                                                                                                                            |
-| `RedisRecoveryTimeout`  | `10m`       | Job considered stuck after                                                                                                                           |
-| `HeartbeatInterval`     | `5s`        | Worker heartbeat frequency                                                                                                                           |
-| `HeartbeatTTL`          | `30s`       | Worker heartbeat TTL                                                                                                                                 |
-| `PopTimeout`            | `5s`        | Queue pop timeout                                                                                                                                    |
-| `NackTimeout`           | `5s`        | Nack operation timeout                                                                                                                               |
+| Parameter               | Default   | Description                                                                                                                                          |
+| ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RedisOptions`          | `nil`     | Standard go-redis options (`*redis.Options`). Mutually exclusive with `RedisFailover`.                                                               |
+| `RedisFailover`         | `nil`     | go-redis failover options for Sentinel (`*redis.FailoverOptions`). Mutually exclusive with `RedisOptions`.                                           |
+| `RedisPingTimeout`      | `5s`      | Redis ping timeout                                                                                                                                   |
+| `RedisPrefix`           | `surge`   | Prefix for all Redis keys (e.g. `surge:namespaces`, `surge:{ns}:queue:{queue}`). Use a custom prefix to share Redis across multiple Surge instances. |
+| `MaxWorkers`            | `25`      | Concurrent worker limit                                                                                                                              |
+| `MaxRetries`            | `25`      | Max retry attempts per job                                                                                                                           |
+| `DefaultNamespace`      | `default` | Default queue namespace                                                                                                                              |
+| `ShutdownTimeout`       | `30s`     | Graceful shutdown timeout                                                                                                                            |
+| `DefaultJobTimeout`     | `5m`      | Default job execution timeout                                                                                                                        |
+| `RedisRecoveryInterval` | `30s`     | Stuck job check frequency                                                                                                                            |
+| `RedisRecoveryTimeout`  | `10m`     | Job considered stuck after                                                                                                                           |
+| `HeartbeatInterval`     | `5s`      | Worker heartbeat frequency                                                                                                                           |
+| `HeartbeatTTL`          | `30s`     | Worker heartbeat TTL                                                                                                                                 |
+| `PopTimeout`            | `5s`      | Queue pop timeout                                                                                                                                    |
+| `NackTimeout`           | `5s`      | Nack operation timeout                                                                                                                               |
 
 ---
 
@@ -581,8 +596,10 @@ Set `DefaultJobTimeout` based on your longest expected job duration.
 
 ```go
 cfg := &config.Config{
-    RedisPoolSize:        100,
-    RedisConnMaxIdleTime: 5 * time.Minute,
+    RedisOptions: &redis.Options{
+        PoolSize:        100,
+        ConnMaxIdleTime: 5 * time.Minute,
+    },
 }
 ```
 

@@ -6,6 +6,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/olamilekan000/surge/surge"
 	"github.com/olamilekan000/surge/surge/config"
 )
@@ -20,7 +22,12 @@ func (j EmailJob) JobName() string {
 }
 
 func main() {
-	cfg := &config.Config{RedisHost: "localhost", RedisPort: 6379, RedisDB: 1}
+	cfg := &config.Config{
+		RedisOptions: &redis.Options{
+			Addr: "localhost:6379",
+			DB:   1,
+		},
+	}
 	client, _ := surge.NewClient(context.Background(), cfg)
 	defer client.Close()
 
