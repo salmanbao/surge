@@ -1,14 +1,16 @@
 # Surge
 
-**Production-grade distributed job queue for Go**
+**Production-grade multi-tenant distributed job queue for Go**
 
-Surge is a distributed, Redis-backed job queue built specifically for Platform and SaaS teams. It comes with built-in multi-tenancy, real-time monitoring, and the reliability controls needed to scale to millions of jobs.
+Surge is a distributed, in-memory job queue designed for multi-tenant Platform and SaaS systems.
 
-## Features
+It provides first-class namespace isolation, real-time monitoring, and the reliability controls needed to safely scale to millions of jobs.
 
+## Core Capabilities
+
+- **Multi-Tenancy (Namespaces)**: First-class tenant isolation with independent queues, metrics, and DLQs
 - **Distributed Processing**: Horizontal scaling with multiple workers
 - **Priority Queues**: Fine-grained job prioritization (Critical → Low)
-- **Namespaces**: Logical isolation of job queues
 - **Scheduled Jobs**: Delay execution or schedule for specific times
 - **Automatic Retries**: Exponential backoff with configurable limits
 - **Dead Letter Queue (DLQ)**: Capture and retry failed jobs
@@ -117,9 +119,9 @@ client.JobWithTopic("email.sent", SendEmail{
 
 ---
 
-## Namespaces: Multi-Tenancy Made Simple
+## Multi-Tenancy
 
-**Namespaces are Surge's core feature for multi-tenancy.** Every job belongs to a namespace, which isolates queue keys, metrics, and processing while sharing the same Redis instance and worker pool.
+Surge was built around namespace-based isolation from day one. Every job belongs to a namespace, which isolates queue keys, metrics, DLQs, and processing state — all while sharing the same Redis cluster and worker pool.
 
 **Use cases:**
 
