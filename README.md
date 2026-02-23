@@ -2,7 +2,7 @@
 
 **Production-grade distributed job queue for Go**
 
-Surge is a distributed, Redis-backed job queue built specifically for Platform and SaaS teams. It comes with built-in multi-tenancy, real-time monitoring, and the reliability controls needed to scale to millions of jobs.
+Surge is a distributed, in-memory job queue built specifically for Platform and SaaS teams. It comes with built-in multi-tenancy, real-time monitoring, and the reliability controls needed to scale to millions of jobs.
 
 <p align="center">
   <img src="./surge.gif" alt="Surge dashboard and queue activity" width="800" />
